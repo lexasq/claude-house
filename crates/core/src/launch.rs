@@ -44,9 +44,11 @@ pub fn profile_spec(
     LaunchSpec { program: claude_exe(install_root, app), args, env }
 }
 
-/// Hand `link` to the stock copy, exactly as the stock `claude://` handler would.
-pub fn stock_spec(install_root: &Path, app: AppVersion, link: &ClaudeLink) -> LaunchSpec {
-    LaunchSpec { program: claude_exe(install_root, app), args: vec![OsString::from(link.as_str())], env: vec![] }
+/// Start the Main account's Claude Desktop, or, if it is running, hand it `link`: exactly what its own
+/// shortcut and its own `claude://` handler do (no `--user-data-dir`, so it uses `%APPDATA%\Claude`).
+pub fn main_spec(install_root: &Path, app: AppVersion, link: Option<&ClaudeLink>) -> LaunchSpec {
+    let args = link.map(|l| OsString::from(l.as_str())).into_iter().collect();
+    LaunchSpec { program: claude_exe(install_root, app), args, env: vec![] }
 }
 
 #[cfg(test)]
@@ -97,9 +99,10 @@ mod tests {
     }
 
     #[test]
-    fn stock_gets_only_the_link() {
+    fn main_account_gets_only_the_link_or_nothing() {
         let link = ClaudeLink::parse("claude://login/x").unwrap();
-        let spec = stock_spec(Path::new(INSTALL), APP, &link);
+        let spec = main_spec(Path::new(INSTALL), APP, Some(&link));
         assert_eq!(spec, LaunchSpec { program: exe(), args: vec![OsString::from("claude://login/x")], env: vec![] });
+        assert_eq!(main_spec(Path::new(INSTALL), APP, None), LaunchSpec { program: exe(), args: vec![], env: vec![] });
     }
 }

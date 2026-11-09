@@ -13,14 +13,14 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
 
-const TRAY_ID: &str = "main";
+const TRAY_ID: &str = "tray";
 
 /// Sign-in state of one Claude copy.
 #[derive(Serialize)]
 struct CopyView {
     /// "never-opened", "signed-out", "signed-in" or "unreadable".
     sign_in: &'static str,
-    /// Names of the other copies on the same account ("Main account" for the stock copy).
+    /// Names of the other copies on the same account ("Main account" for the Main account).
     same_account_as: Vec<String>,
 }
 
@@ -68,24 +68,24 @@ fn overview_view(o: &Overview) -> OverviewView {
 
 #[derive(Serialize)]
 struct RoutingView {
-    /// The watcher thread is running.
+    /// The handler guard is running.
     enabled: bool,
     /// Who claude:// goes to right now: "claude-house", "claude-desktop" or "other".
     owner: &'static str,
-    /// Why the watcher stopped on its own, if it did.
+    /// Why the handler guard stopped on its own, if it did.
     error: Option<String>,
 }
 
 /// The one thread allowed to write the claude:// handler. Held behind a mutex: at most one exists.
-struct Router {
+struct HandlerGuard {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
 }
 
 struct AppState {
     house: House,
-    router: Mutex<Option<Router>>,
-    router_error: Mutex<Option<String>>,
+    guard: Mutex<Option<HandlerGuard>>,
+    guard_error: Mutex<Option<String>>,
 }
 
 #[tauri::command]
@@ -131,67 +131,56 @@ fn routing_status(state: State<AppState>) -> RoutingView {
     routing_view(&state)
 }
 
-/// Runs off the UI thread: turning routing off waits up to a second for the watcher to stop.
+/// Runs off the UI thread: turning routing off waits up to a second for the guard to stop.
 /// The choice is remembered for the next start; routing is never turned on without the user.
 #[tauri::command(async)]
 fn set_routing(app: AppHandle, state: State<AppState>, enabled: bool) -> Result<RoutingView, String> {
-    let marker = routing_marker(&state.house);
+    state.house.set_routing_wanted(enabled)?;
     if enabled {
-        std::fs::create_dir_all(&state.house.root).map_err(|e| e.to_string())?;
-        std::fs::write(&marker, b"").map_err(|e| format!("cannot save the setting: {e}"))?;
         start_routing(&app);
     } else {
-        match std::fs::remove_file(&marker) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(format!("cannot save the setting: {e}")),
-            _ => {}
-        }
         stop_routing(&app)?;
     }
     Ok(routing_view(&state))
 }
 
-/// Present when the user turned login routing on.
-fn routing_marker(house: &House) -> std::path::PathBuf {
-    house.root.join("routing-enabled")
-}
-
 fn routing_view(state: &AppState) -> RoutingView {
-    let enabled = state.router.lock().unwrap().as_ref().is_some_and(|r| !r.thread.is_finished());
+    let enabled = state.guard.lock().unwrap().as_ref().is_some_and(|r| !r.thread.is_finished());
     let owner = match state.house.handler_owner() {
         HandlerOwner::ClaudeHouse => "claude-house",
         HandlerOwner::ClaudeDesktop => "claude-desktop",
         HandlerOwner::Other(_) => "other",
     };
-    RoutingView { enabled, owner, error: state.router_error.lock().unwrap().clone() }
+    RoutingView { enabled, owner, error: state.guard_error.lock().unwrap().clone() }
 }
 
-/// Starts the watcher unless one is already running. Running it twice changes nothing.
+/// Starts the handler guard unless one is already running. Running it twice changes nothing.
 fn start_routing(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let mut router = state.router.lock().unwrap();
-    if router.as_ref().is_some_and(|r| !r.thread.is_finished()) {
+    let mut guard = state.guard.lock().unwrap();
+    if guard.as_ref().is_some_and(|r| !r.thread.is_finished()) {
         return;
     }
-    *state.router_error.lock().unwrap() = None;
+    *state.guard_error.lock().unwrap() = None;
     let stop = Arc::new(AtomicBool::new(false));
     let (thread_stop, thread_app) = (stop.clone(), app.clone());
     let thread = std::thread::spawn(move || {
-        let result = ops::keep_handler(&thread_stop, |_| {
+        let result = ops::guard_handler(&thread_stop, |_| {
             let _ = thread_app.emit("routing-changed", ());
         });
         if let Err(e) = result {
-            *thread_app.state::<AppState>().router_error.lock().unwrap() = Some(e);
+            *thread_app.state::<AppState>().guard_error.lock().unwrap() = Some(e);
         }
         let _ = thread_app.emit("routing-changed", ());
     });
-    *router = Some(Router { stop, thread });
+    *guard = Some(HandlerGuard { stop, thread });
 }
 
-/// Stops the watcher and waits for it, so it cannot take claude:// back, then returns claude:// to Claude.
+/// Stops the handler guard and waits for it, so it cannot take claude:// back, then returns claude:// to Claude.
 fn stop_routing(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let router = state.router.lock().unwrap().take();
-    if let Some(r) = router {
+    let guard = state.guard.lock().unwrap().take();
+    if let Some(r) = guard {
         r.stop.store(true, Ordering::Relaxed);
         let _ = r.thread.join();
     }
@@ -219,7 +208,7 @@ fn refresh_tray(app: &AppHandle) {
     }
 }
 
-fn show_main(app: &AppHandle) {
+fn show_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -229,7 +218,7 @@ fn show_main(app: &AppHandle) {
 
 /// Gives claude:// back to Claude only if this app was routing, so quitting never touches the registry otherwise.
 fn quit(app: &AppHandle) {
-    if app.state::<AppState>().router.lock().unwrap().is_some() {
+    if app.state::<AppState>().guard.lock().unwrap().is_some() {
         let _ = stop_routing(app);
     }
     app.exit(0);
@@ -237,7 +226,7 @@ fn quit(app: &AppHandle) {
 
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
-        "show" => show_main(app),
+        "show" => show_window(app),
         "quit" => quit(app),
         _ => {
             let house = &app.state::<AppState>().house;
@@ -256,8 +245,8 @@ fn on_menu(app: &AppHandle, id: &str) {
 fn main() {
     let house = House::from_process().expect("APPDATA and LOCALAPPDATA are always set on Windows");
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
-        .manage(AppState { house, router: Mutex::new(None), router_error: Mutex::new(None) })
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_window(app)))
+        .manage(AppState { house, guard: Mutex::new(None), guard_error: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
             overview,
             launch_main,
@@ -277,11 +266,11 @@ fn main() {
                 .on_menu_event(|app, event| on_menu(app, event.id.as_ref()))
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                        show_main(tray.app_handle());
+                        show_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
-            if routing_marker(&handle.state::<AppState>().house).exists() {
+            if handle.state::<AppState>().house.routing_wanted() {
                 start_routing(handle);
             }
             Ok(())

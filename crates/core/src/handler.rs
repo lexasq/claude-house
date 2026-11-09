@@ -2,7 +2,7 @@
 //!
 //! Every `claude.exe` start re-registers itself there (Claude passes `keepExistingDefault: false`),
 //! so Claude House cannot set it once; a watcher must put it back after each change.
-//! The stock value is always `"<claude.exe>" "%1"`, so restoring needs no backup.
+//! Claude Desktop's own value is always `"<claude.exe>" "%1"`, so restoring needs no backup.
 
 use std::path::Path;
 
@@ -35,9 +35,9 @@ mod tests {
     }
 
     #[test]
-    fn stock_or_missing_command_is_not_ours() {
-        let stock = r#""C:\L\AnthropicClaude\app-4.23118.0\claude.exe" "%1""#;
-        assert!(!is_handled_by(Some(stock), Path::new(EXE)));
+    fn claude_desktop_or_missing_command_is_not_ours() {
+        let claude_desktop = r#""C:\L\AnthropicClaude\app-4.23118.0\claude.exe" "%1""#;
+        assert!(!is_handled_by(Some(claude_desktop), Path::new(EXE)));
         assert!(!is_handled_by(None, Path::new(EXE)));
     }
 }

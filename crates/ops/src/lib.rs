@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use claude_house_core::account::{shared_accounts, sign_in_state, SignIn};
 use claude_house_core::handler::{handler_command, is_handled_by};
 use claude_house_core::install::{newest_app, AppVersion};
-use claude_house_core::launch::{claude_exe, profile_spec, stock_spec, LaunchSpec};
+use claude_house_core::launch::{claude_exe, profile_spec, main_spec, LaunchSpec};
 use claude_house_core::link::{last_login_start, route, ClaudeLink, LogTime, Target};
 use claude_house_core::profile::{profile_dir, Color, Profile, ProfileId, ProfileName};
 use claude_house_core::store::{self, ProfileList, StoreError};
@@ -19,13 +19,13 @@ mod registry;
 pub struct House {
     pub root: PathBuf,
     install_root: PathBuf,
-    /// The stock copy's log, where it records login starts.
-    stock_log: PathBuf,
-    /// The stock copy's `config.json`, where it records who is signed in.
-    stock_config: PathBuf,
+    /// The Main account's log, where it records login starts (in %LOCALAPPDATA%, see docs/phase0-findings.md).
+    main_log: PathBuf,
+    /// The Main account's data folder `%APPDATA%\Claude` holds `config.json`, where it records who is signed in.
+    main_config: PathBuf,
 }
 
-/// What the stock Claude Desktop is called: the account the user already uses, kept as it is.
+/// What Claude House calls the Claude Desktop the user already had: their usual account, kept as it is (same data folder, same sign-in, same sessions).
 pub const MAIN_NAME: &str = "Main account";
 
 /// One Claude copy's sign-in state and the other copies on the same account.
@@ -34,19 +34,19 @@ pub struct CopyStatus {
     pub same_account_as: Vec<Target>,
 }
 
-/// The main (stock) Claude and every profile, with sign-in states.
+/// The Main account and every profile, with sign-in states.
 pub struct Overview {
     pub main: CopyStatus,
     pub profiles: Vec<(Profile, CopyStatus)>,
 }
 
 impl Overview {
-    /// Display names of `targets` (`MAIN_NAME` for the stock copy).
+    /// Display names of `targets` (`MAIN_NAME` for the Main account).
     pub fn names(&self, targets: &[Target]) -> Vec<String> {
         targets
             .iter()
             .map(|t| match t {
-                Target::Stock => MAIN_NAME.to_owned(),
+                Target::Main => MAIN_NAME.to_owned(),
                 Target::Profile(id) => {
                     self.profiles.iter().find(|(p, _)| &p.id == id).map_or(id.as_str(), |(p, _)| p.name.as_str()).to_owned()
                 }
@@ -72,33 +72,35 @@ impl House {
             // outside the profile folder (app.asar: setAppLogsPath(join(LOCALAPPDATA, basename(userData), "logs"))).
             root: local.join("ClaudeHouse"),
             install_root: local.join("AnthropicClaude"),
-            stock_log: local.join("Claude").join("Logs").join("main.log"),
-            stock_config: roaming.join("Claude").join("config.json"),
+            main_log: local.join("Claude").join("Logs").join("main.log"),
+            main_config: roaming.join("Claude").join("config.json"),
         })
     }
 
-    /// The main Claude and every profile with sign-in states and shared accounts.
+    /// The Main account and every profile with sign-in states and shared accounts.
     pub fn overview(&self) -> Result<Overview, String> {
         let list = self.profiles()?;
-        let states: Vec<(Target, SignIn)> = std::iter::once((Target::Stock, read_sign_in(&self.stock_config)))
-            .chain(list.iter().map(|p| {
-                let config = profile_dir(&self.root, &p.id).join("config.json");
-                (Target::Profile(p.id.clone()), read_sign_in(&config))
-            }))
+        let main = read_sign_in(&self.main_config);
+        let profiles: Vec<SignIn> =
+            list.iter().map(|p| read_sign_in(&profile_dir(&self.root, &p.id).join("config.json"))).collect();
+        // Shared accounts are found across all copies, the Main account included.
+        let all: Vec<(Target, SignIn)> = std::iter::once((Target::Main, main.clone()))
+            .chain(list.iter().zip(&profiles).map(|(p, s)| (Target::Profile(p.id.clone()), s.clone())))
             .collect();
-        let shared = shared_accounts(&states);
-        let mut copies = states.into_iter().map(|(target, sign_in)| {
-            let same_account_as = shared.iter().find(|(t, _)| *t == target).map(|(_, o)| o.clone()).unwrap_or_default();
-            CopyStatus { sign_in, same_account_as }
-        });
-        let main = copies.next().expect("the stock copy is always first");
-        Ok(Overview { main, profiles: list.iter().cloned().zip(copies).collect() })
+        let shared = shared_accounts(&all);
+        let status = |target: &Target, sign_in: SignIn| CopyStatus {
+            sign_in,
+            same_account_as: shared.iter().find(|(t, _)| t == target).map(|(_, others)| others.clone()).unwrap_or_default(),
+        };
+        Ok(Overview {
+            main: status(&Target::Main, main),
+            profiles: list.iter().zip(profiles).map(|(p, s)| (p.clone(), status(&Target::Profile(p.id.clone()), s))).collect(),
+        })
     }
 
-    /// Opens the main Claude (or brings it to the front), like its own shortcut does.
+    /// Opens the Main account's Claude Desktop (or brings it to the front), like its own shortcut does.
     pub fn launch_main(&self) -> Result<(), String> {
-        let exe = self.stock_exe()?;
-        spawn(&LaunchSpec { program: exe, args: vec![], env: vec![] })
+        spawn(&main_spec(&self.install_root, self.installed_app()?, None))
     }
 
     fn list_path(&self) -> PathBuf {
@@ -148,7 +150,7 @@ impl House {
     }
 
     /// Where `url` goes and the command that delivers it.
-    pub fn link_plan(&self, url: &str) -> Result<(Target, LaunchSpec), String> {
+    pub fn link_spec(&self, url: &str) -> Result<(Target, LaunchSpec), String> {
         // The link is never echoed back: a link handed to us may carry a one-time login code,
         // and this message can end up in ch-link.log.
         let link = ClaudeLink::parse(url).map_err(|_| "that is not a claude:// link".to_owned())?;
@@ -156,7 +158,7 @@ impl House {
         let target = route(&link, &self.login_starts(&list));
         let app = self.installed_app()?;
         let spec = match &target {
-            Target::Stock => stock_spec(&self.install_root, app, &link),
+            Target::Main => main_spec(&self.install_root, app, Some(&link)),
             Target::Profile(id) => {
                 let profile = list.get(id).expect("route only returns listed profiles");
                 profile_spec(&self.install_root, app, &self.root, profile, Some(&link))
@@ -166,18 +168,18 @@ impl House {
     }
 
     pub fn open_link(&self, url: &str) -> Result<Target, String> {
-        let (target, spec) = self.link_plan(url)?;
+        let (target, spec) = self.link_spec(url)?;
         spawn(&spec)?;
         Ok(target)
     }
 
-    /// Last login start of the stock copy and of every profile, from their logs. Unreadable logs count as none.
+    /// Last login start of the Main account and of every profile, from their logs. Unreadable logs count as none.
     fn login_starts(&self, list: &ProfileList) -> Vec<(Target, LogTime)> {
         let last = |log: &Path| last_login_start_in_file(log, 64 * 1024);
         let profiles = list
             .iter()
             .map(|p| (Target::Profile(p.id.clone()), profile_dir(&self.root, &p.id).join("logs").join("main.log")));
-        std::iter::once((Target::Stock, self.stock_log.clone()))
+        std::iter::once((Target::Main, self.main_log.clone()))
             .chain(profiles)
             .filter_map(|(target, log)| last(&log).map(|at| (target, at)))
             .collect()
@@ -191,7 +193,7 @@ impl House {
             .ok_or(format!("Claude Desktop is not installed in {}", self.install_root.display()))
     }
 
-    fn stock_exe(&self) -> Result<PathBuf, String> {
+    fn newest_claude_exe(&self) -> Result<PathBuf, String> {
         Ok(claude_exe(&self.install_root, self.installed_app()?))
     }
 
@@ -199,7 +201,7 @@ impl House {
         let current = registry::read_handler();
         if link_exe().is_ok_and(|exe| is_handled_by(current.as_deref(), &exe)) {
             HandlerOwner::ClaudeHouse
-        } else if self.stock_exe().is_ok_and(|exe| is_handled_by(current.as_deref(), &exe)) {
+        } else if self.newest_claude_exe().is_ok_and(|exe| is_handled_by(current.as_deref(), &exe)) {
             HandlerOwner::ClaudeDesktop
         } else {
             HandlerOwner::Other(current)
@@ -208,7 +210,28 @@ impl House {
 
     /// Points `claude://` back at Claude Desktop.
     pub fn restore_handler(&self) -> Result<(), String> {
-        write_handler(&handler_command(&self.stock_exe()?))
+        write_handler(&handler_command(&self.newest_claude_exe()?))
+    }
+
+    /// `<house root>\routing-enabled`: present when the user turned login routing on.
+    fn routing_marker(&self) -> PathBuf {
+        self.root.join("routing-enabled")
+    }
+
+    /// Whether the user turned login routing on (the app starts the handler guard only then).
+    pub fn routing_wanted(&self) -> bool {
+        self.routing_marker().is_file()
+    }
+
+    /// Remembers the user's routing choice for the next start. Saving the same choice twice is fine.
+    pub fn set_routing_wanted(&self, on: bool) -> Result<(), String> {
+        let marker = self.routing_marker();
+        let result = if on {
+            std::fs::create_dir_all(&self.root).and_then(|()| std::fs::write(&marker, b""))
+        } else {
+            std::fs::remove_file(&marker).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
+        };
+        result.map_err(|e| format!("cannot save the routing setting: {e}"))
     }
 }
 
@@ -226,11 +249,12 @@ pub fn take_handler() -> Result<(), String> {
 /// Keeps `claude://` pointed at Claude House until `stop` is set (checked at least every second,
 /// so a caller that joins the thread waits at most that long).
 /// Calls `on_take` with the command it replaced each time it takes the handler back.
-pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) -> Result<(), String> {
-    let ours = handler_command(&link_exe()?);
+pub fn guard_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) -> Result<(), String> {
+    let link_exe = link_exe()?;
+    let ours = handler_command(&link_exe);
     while !stop.load(Ordering::Relaxed) {
         let current = registry::read_handler();
-        if current.as_deref() != Some(ours.as_str()) {
+        if !is_handled_by(current.as_deref(), &link_exe) {
             write_handler(&ours)?;
             on_take(current);
         }

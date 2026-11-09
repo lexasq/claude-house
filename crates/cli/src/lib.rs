@@ -95,13 +95,13 @@ fn run(cmd: Cmd, house: &House) -> Result<String, String> {
         Cmd::Remove { id } => house
             .remove(&id)
             .map(|dir| format!("Removed {id}. Its data is kept in {}\n", dir.display())),
-        Cmd::Launch { id, dry_run: true } => house.launch_spec(&id).map(|spec| describe(&spec)),
+        Cmd::Launch { id, dry_run: true } => house.launch_spec(&id).map(|spec| command_line(&spec)),
         Cmd::Launch { id, dry_run: false } => house
             .launch(&id)
             .map(|()| format!("Opened {id}. If it was already running, its window comes to the front.\n")),
         Cmd::OpenLink { url, dry_run: true } => house
-            .link_plan(&url)
-            .map(|(to, spec)| format!("to: {}\n{}", target_name(&to), describe(&spec))),
+            .link_spec(&url)
+            .map(|(to, spec)| format!("to: {}\n{}", target_name(&to), command_line(&spec))),
         Cmd::OpenLink { url, dry_run: false } => house.open_link(&url).map(|to| format!("Sent the link to {}.\n", target_name(&to))),
         Cmd::Handler { action: HandlerAction::Status } => Ok(handler_status(house)),
         Cmd::Handler { action: HandlerAction::Install } => ops::take_handler().map(|()| {
@@ -116,7 +116,7 @@ fn run(cmd: Cmd, house: &House) -> Result<String, String> {
 
 fn target_name(target: &Target) -> &str {
     match target {
-        Target::Stock => "stock",
+        Target::Main => "main",
         Target::Profile(id) => id.as_str(),
     }
 }
@@ -131,7 +131,7 @@ fn handler_status(house: &House) -> String {
 
 fn watch() -> Result<String, String> {
     println!("Keeping claude:// pointed at Claude House. Ctrl+C to stop.");
-    ops::keep_handler(&AtomicBool::new(false), |was| {
+    ops::guard_handler(&AtomicBool::new(false), |was| {
         println!("{} took claude:// back from: {}", chrono::Local::now().format("%H:%M:%S"), was.as_deref().unwrap_or("(none)"));
     })?;
     Ok(String::new())
@@ -161,7 +161,7 @@ fn render(o: &Overview) -> String {
     format!("{}  {}\n{profiles}", ops::MAIN_NAME, status(&o.main))
 }
 
-fn describe(spec: &LaunchSpec) -> String {
+fn command_line(spec: &LaunchSpec) -> String {
     let env: String = spec
         .env
         .iter()

@@ -52,7 +52,7 @@ impl ClaudeLink {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// The stock Claude Desktop copy (`%APPDATA%\Claude`).
-    Stock,
+    Main,
     Profile(ProfileId),
 }
 
@@ -93,15 +93,15 @@ pub fn last_login_start(log: &str) -> Option<LogTime> {
         .max()
 }
 
-/// Where a link goes: a login link to the copy with the newest login start; anything else to the stock copy.
+/// Where a link goes: a login link to the copy with the newest login start; anything else to the Main account.
 pub fn route(link: &ClaudeLink, starts: &[(Target, LogTime)]) -> Target {
     if link.kind != LinkKind::Login {
-        return Target::Stock;
+        return Target::Main;
     }
     starts
         .iter()
         .max_by_key(|(_, at)| *at)
-        .map_or(Target::Stock, |(target, _)| target.clone())
+        .map_or(Target::Main, |(target, _)| target.clone())
 }
 
 #[cfg(test)]
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn login_goes_to_newest_start() {
-        let starts = [(Target::Stock, t("2026-11-09 11:50:00")), (p("work"), t("2026-11-09 11:58:00")), (p("home"), t("2026-11-09 11:55:00"))];
+        let starts = [(Target::Main, t("2026-11-09 11:50:00")), (p("work"), t("2026-11-09 11:58:00")), (p("home"), t("2026-11-09 11:55:00"))];
         assert_eq!(route(&login(), &starts), p("work"));
     }
 
@@ -169,9 +169,9 @@ mod tests {
     }
 
     #[test]
-    fn no_starts_and_other_links_go_to_stock() {
-        assert_eq!(route(&login(), &[]), Target::Stock);
+    fn no_starts_and_other_links_go_to_main() {
+        assert_eq!(route(&login(), &[]), Target::Main);
         let other = ClaudeLink::parse("claude://claude.ai/chat/1").unwrap();
-        assert_eq!(route(&other, &[(p("work"), t("2026-11-09 12:00:00"))]), Target::Stock);
+        assert_eq!(route(&other, &[(p("work"), t("2026-11-09 12:00:00"))]), Target::Main);
     }
 }

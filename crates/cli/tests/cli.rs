@@ -173,7 +173,7 @@ fn log_login(log: &std::path::Path, mins_ago: i64) {
 }
 
 impl Sandbox {
-    fn stock_log(&self) -> PathBuf {
+    fn main_log(&self) -> PathBuf {
         self.localappdata.join("Claude").join("Logs").join("main.log")
     }
     fn profile_log(&self, id: &str) -> PathBuf {
@@ -191,7 +191,7 @@ fn login_link_goes_to_profile_with_newest_login_start() {
     let s = Sandbox::new();
     ok(&s.ch(&["add", "work"]));
     ok(&s.ch(&["add", "home"]));
-    log_login(&s.stock_log(), 5);
+    log_login(&s.main_log(), 5);
     log_login(&s.profile_log("work"), 1);
     log_login(&s.profile_log("home"), 3);
     let profile = s.house().join("profiles").join("work");
@@ -214,26 +214,26 @@ fn login_start_is_found_behind_a_large_log() {
 }
 
 #[test]
-fn login_link_goes_to_stock_when_it_started_last() {
+fn login_link_goes_to_main_when_it_started_last() {
     let s = Sandbox::new();
     ok(&s.ch(&["add", "work"]));
     log_login(&s.profile_log("work"), 4);
-    log_login(&s.stock_log(), 1);
+    log_login(&s.main_log(), 1);
     assert_eq!(
         ok(&s.ch(&["open-link", LOGIN, "--dry-run"])),
-        format!("to: stock\n\"{}\" \"{LOGIN}\"\n", s.exe().display())
+        format!("to: main\n\"{}\" \"{LOGIN}\"\n", s.exe().display())
     );
 }
 
 #[test]
-fn missing_logs_and_other_links_go_to_stock_old_starts_still_count() {
+fn missing_logs_and_other_links_go_to_main_old_starts_still_count() {
     let s = Sandbox::new();
     ok(&s.ch(&["add", "work"]));
-    assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: stock\n"));
+    assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: main\n"));
     log_login(&s.profile_log("work"), 20);
     assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: work\n"));
     log_login(&s.profile_log("work"), 1);
-    assert!(ok(&s.ch(&["open-link", "claude://claude.ai/chat/1", "--dry-run"])).starts_with("to: stock\n"));
+    assert!(ok(&s.ch(&["open-link", "claude://claude.ai/chat/1", "--dry-run"])).starts_with("to: main\n"));
 }
 
 #[test]
