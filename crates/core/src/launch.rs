@@ -20,7 +20,8 @@ pub fn code_config_dir(house_root: &Path, profile: &Profile) -> PathBuf {
     profile_dir(house_root, &profile.id).join("claude-code")
 }
 
-fn claude_exe(install_root: &Path, app: AppVersion) -> PathBuf {
+/// `<install root>\app-<version>\claude.exe`.
+pub fn claude_exe(install_root: &Path, app: AppVersion) -> PathBuf {
     install_root.join(app.dir_name()).join("claude.exe")
 }
 
