@@ -10,7 +10,6 @@ use claude_house_core::handler::{handler_command, is_handled_by};
 use claude_house_core::install::{newest_app, AppVersion};
 use claude_house_core::launch::{claude_exe, profile_spec, stock_spec, LaunchSpec};
 use claude_house_core::link::{last_login_start, route, ClaudeLink, LogTime, Target};
-use claude_house_core::process::{main_claude_running, ProcessInfo};
 use claude_house_core::profile::{profile_dir, Color, Profile, ProfileId, ProfileName};
 use claude_house_core::store::{self, ProfileList, StoreError};
 
@@ -22,8 +21,8 @@ pub struct House {
     install_root: PathBuf,
     /// The stock copy's log, where it records login starts.
     stock_log: PathBuf,
-    /// The stock copy's data folder (`%APPDATA%\Claude`).
-    stock_data: PathBuf,
+    /// The stock copy's `config.json`, where it records who is signed in.
+    stock_config: PathBuf,
 }
 
 /// One Claude copy's sign-in state and the other copies on the same account.
@@ -71,14 +70,14 @@ impl House {
             root: local.join("ClaudeHouse"),
             install_root: local.join("AnthropicClaude"),
             stock_log: local.join("Claude").join("Logs").join("main.log"),
-            stock_data: roaming.join("Claude"),
+            stock_config: roaming.join("Claude").join("config.json"),
         })
     }
 
     /// The main Claude and every profile with sign-in states and shared accounts.
     pub fn overview(&self) -> Result<Overview, String> {
         let list = self.profiles()?;
-        let states: Vec<(Target, SignIn)> = std::iter::once((Target::Stock, read_sign_in(&self.stock_data.join("config.json"))))
+        let states: Vec<(Target, SignIn)> = std::iter::once((Target::Stock, read_sign_in(&self.stock_config)))
             .chain(list.iter().map(|p| {
                 let config = profile_dir(&self.root, &p.id).join("config.json");
                 (Target::Profile(p.id.clone()), read_sign_in(&config))
@@ -113,51 +112,16 @@ impl House {
     }
 
     pub fn add(&self, id: &str, name: Option<&str>, color: &str, isolate_code: bool) -> Result<Profile, String> {
-        self.list_profile(new_profile(id, name, color, isolate_code)?)
-    }
-
-    fn list_profile(&self, profile: Profile) -> Result<Profile, String> {
+        let profile = Profile {
+            id: parse_id(id)?,
+            name: ProfileName::parse(name.unwrap_or(id)).ok_or("invalid name: use 1-64 characters")?,
+            color: Color::parse(color).ok_or(format!("invalid color {color:?}: use #rrggbb"))?,
+            isolate_code,
+        };
         let mut list = self.profiles()?;
-        list.add(profile.clone()).map_err(|_| format!("profile {:?} already exists", profile.id.as_str()))?;
+        list.add(profile.clone()).map_err(|_| format!("profile {id:?} already exists"))?;
         self.save(&list)?;
         Ok(profile)
-    }
-
-    /// Copies Main Claude's data folder (sign-in, sessions, settings) into a new profile.
-    /// Copies into `<id>.importing`, marks it complete, then renames it, so rerunning after a crash
-    /// either redoes a half copy or finishes a complete one. The original folder is not touched.
-    pub fn import_main(&self, id: &str, name: Option<&str>, color: &str) -> Result<Profile, String> {
-        const DONE: &str = ".claude-house-import";
-        let profile = new_profile(id, name, color, false)?;
-        if self.profiles()?.get(&profile.id).is_some() {
-            return Err(format!("profile {id:?} already exists"));
-        }
-        let target = profile_dir(&self.root, &profile.id);
-        if !target.join(DONE).is_file() {
-            if target.exists() {
-                return Err(format!("profile id {id:?} already has a folder ({}); pick another id", target.display()));
-            }
-            if !self.stock_data.join("config.json").is_file() {
-                return Err(format!("Main Claude has no data in {}", self.stock_data.display()));
-            }
-            if self.main_running()? {
-                return Err("Quit Main Claude first: right-click its tray icon and choose Quit.".into());
-            }
-            let staging = target.with_file_name(format!("{id}.importing"));
-            let io = |what: &str, e: std::io::Error| format!("cannot {what}: {e}");
-            if staging.exists() {
-                std::fs::remove_dir_all(&staging).map_err(|e| io("clear an earlier half-finished import", e))?;
-            }
-            copy_dir(&self.stock_data, &staging).map_err(|e| io("copy Main Claude's data", e))?;
-            std::fs::write(staging.join(DONE), b"").map_err(|e| io("mark the copy complete", e))?;
-            std::fs::rename(&staging, &target).map_err(|e| io("finish the import", e))?;
-        }
-        self.list_profile(profile)
-    }
-
-    /// Whether Main Claude is running. If the process list cannot be read, says so instead of guessing.
-    pub fn main_running(&self) -> Result<bool, String> {
-        Ok(main_claude_running(&running_processes()?, &self.install_root, &self.root))
     }
 
     /// Forgets the profile. Returns its data folder, which is kept.
@@ -268,50 +232,6 @@ pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) 
         registry::wait_for_change(std::time::Duration::from_secs(1));
     }
     Ok(())
-}
-
-fn new_profile(id: &str, name: Option<&str>, color: &str, isolate_code: bool) -> Result<Profile, String> {
-    Ok(Profile {
-        id: parse_id(id)?,
-        name: ProfileName::parse(name.unwrap_or(id)).ok_or("invalid name: use 1-64 characters")?,
-        color: Color::parse(color).ok_or(format!("invalid color {color:?}: use #rrggbb"))?,
-        isolate_code,
-    })
-}
-
-/// Copies a folder tree. Symbolic links are skipped rather than followed.
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        let dest = to.join(entry.file_name());
-        if kind.is_dir() {
-            copy_dir(&entry.path(), &dest)?;
-        } else if kind.is_file() {
-            std::fs::copy(entry.path(), dest)?;
-        }
-    }
-    Ok(())
-}
-
-/// Program path and command line of every process we can see.
-fn running_processes() -> Result<Vec<ProcessInfo>, String> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-    let mut sys = System::new().map_err(|e| format!("cannot list running programs: {e}"))?;
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::Always).with_cmd(UpdateKind::Always),
-    );
-    Ok(sys
-        .processes()
-        .values()
-        .map(|p| ProcessInfo {
-            exe: p.exe().map(|e| e.display().to_string()).unwrap_or_default(),
-            cmd: p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "),
-        })
-        .collect())
 }
 
 /// A missing file means the copy was never opened; any other read failure is unreadable.
