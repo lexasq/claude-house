@@ -25,25 +25,31 @@ pub struct House {
     stock_config: PathBuf,
 }
 
-/// A profile with its sign-in state and the other copies on the same account.
-pub struct ProfileStatus {
-    pub profile: Profile,
+/// One Claude copy's sign-in state and the other copies on the same account.
+pub struct CopyStatus {
     pub sign_in: SignIn,
     pub same_account_as: Vec<Target>,
 }
 
-/// Display names of the copies `status` shares its account with ("main Claude" for the stock copy).
-pub fn shared_names(statuses: &[ProfileStatus], status: &ProfileStatus) -> Vec<String> {
-    status
-        .same_account_as
-        .iter()
-        .map(|t| match t {
-            Target::Stock => "main Claude".to_owned(),
-            Target::Profile(id) => {
-                statuses.iter().find(|s| &s.profile.id == id).map_or(id.as_str(), |s| s.profile.name.as_str()).to_owned()
-            }
-        })
-        .collect()
+/// The main (stock) Claude and every profile, with sign-in states.
+pub struct Overview {
+    pub main: CopyStatus,
+    pub profiles: Vec<(Profile, CopyStatus)>,
+}
+
+impl Overview {
+    /// Display names of `targets` ("main Claude" for the stock copy).
+    pub fn names(&self, targets: &[Target]) -> Vec<String> {
+        targets
+            .iter()
+            .map(|t| match t {
+                Target::Stock => "main Claude".to_owned(),
+                Target::Profile(id) => {
+                    self.profiles.iter().find(|(p, _)| &p.id == id).map_or(id.as_str(), |(p, _)| p.name.as_str()).to_owned()
+                }
+            })
+            .collect()
+    }
 }
 
 /// Who `claude://` links currently go to.
@@ -68,8 +74,8 @@ impl House {
         })
     }
 
-    /// Every profile with its sign-in state; the stock copy counts when looking for shared accounts.
-    pub fn statuses(&self) -> Result<Vec<ProfileStatus>, String> {
+    /// The main Claude and every profile with sign-in states and shared accounts.
+    pub fn overview(&self) -> Result<Overview, String> {
         let list = self.profiles()?;
         let states: Vec<(Target, SignIn)> = std::iter::once((Target::Stock, read_sign_in(&self.stock_config)))
             .chain(list.iter().map(|p| {
@@ -78,15 +84,18 @@ impl House {
             }))
             .collect();
         let shared = shared_accounts(&states);
-        Ok(list
-            .iter()
-            .zip(states.into_iter().skip(1))
-            .map(|(profile, (target, sign_in))| ProfileStatus {
-                profile: profile.clone(),
-                sign_in,
-                same_account_as: shared.iter().find(|(t, _)| *t == target).map(|(_, o)| o.clone()).unwrap_or_default(),
-            })
-            .collect())
+        let mut copies = states.into_iter().map(|(target, sign_in)| {
+            let same_account_as = shared.iter().find(|(t, _)| *t == target).map(|(_, o)| o.clone()).unwrap_or_default();
+            CopyStatus { sign_in, same_account_as }
+        });
+        let main = copies.next().expect("the stock copy is always first");
+        Ok(Overview { main, profiles: list.iter().cloned().zip(copies).collect() })
+    }
+
+    /// Opens the main Claude (or brings it to the front), like its own shortcut does.
+    pub fn launch_main(&self) -> Result<(), String> {
+        let exe = self.stock_exe()?;
+        spawn(&LaunchSpec { program: exe, args: vec![], env: vec![] })
     }
 
     fn list_path(&self) -> PathBuf {

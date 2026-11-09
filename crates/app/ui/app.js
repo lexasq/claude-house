@@ -62,42 +62,64 @@ const SIGN_IN = {
   unreadable: ["Status unknown", "todo"],
 };
 
-function profileItem(p) {
+/// One row: a Claude copy with its sign-in badge, a note, a warning and buttons.
+function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   const li = document.createElement("li");
   li.className = "card profile";
 
   const dot = document.createElement("span");
   dot.className = "dot";
-  dot.style.background = p.color;
+  dot.style.background = color;
 
   const info = document.createElement("div");
-  const name = document.createElement("div");
-  name.className = "name";
-  name.textContent = p.name;
-  const [label, cls] = SIGN_IN[p.sign_in];
+  const title = document.createElement("div");
+  title.className = "name";
+  title.textContent = name;
+  const [label, cls] = SIGN_IN[copy.sign_in];
   const badge = document.createElement("span");
   badge.className = `badge ${cls}`;
   badge.textContent = label;
-  name.append(" ", badge);
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  meta.textContent = `${p.id} · Code tab ${p.isolate_code ? "separate" : "shared"}`;
-  info.append(name, meta);
-  if (p.same_account_as.length) {
+  title.append(" ", badge);
+  const sub = document.createElement("div");
+  sub.className = "meta";
+  sub.textContent = meta;
+  info.append(title, sub);
+  if (copy.same_account_as.length) {
     const warn = document.createElement("div");
     warn.className = "warn";
-    warn.textContent = `Same account as ${p.same_account_as.join(", ")}. Sign this one out and in with a different account.`;
+    warn.textContent = `Same account as ${copy.same_account_as.join(", ")}. ${warning}`;
     info.append(warn);
   }
 
-  const open = document.createElement("button");
-  open.className = "primary";
-  open.textContent = "Open";
-  open.addEventListener("click", async () => {
-    await call("launch_profile", { id: p.id });
-    say(`Opening ${p.name}. If it's already open, its window comes to the front.`);
+  const openButton = document.createElement("button");
+  openButton.className = "primary";
+  openButton.textContent = "Open";
+  openButton.addEventListener("click", async () => {
+    await open();
+    say(`Opening ${name}. If it's already open, its window comes to the front.`);
   });
 
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  actions.append(openButton, ...extra);
+  li.append(dot, info, actions);
+  return li;
+}
+
+function mainItem(main) {
+  const li = copyItem({
+    name: "Main Claude",
+    color: "var(--muted)",
+    meta: "Your usual Claude Desktop. Its Code sessions stay here.",
+    copy: main,
+    warning: "Keep your main account here and use profiles for other accounts.",
+    open: () => call("launch_main"),
+  });
+  li.classList.add("main-copy");
+  return li;
+}
+
+function profileItem(p) {
   const remove = document.createElement("button");
   remove.className = "danger";
   remove.textContent = "Remove";
@@ -119,25 +141,29 @@ function profileItem(p) {
     await showProfiles();
   });
 
-  const actions = document.createElement("div");
-  actions.className = "actions";
-  actions.append(open, remove);
-  li.append(dot, info, actions);
-  return li;
+  return copyItem({
+    name: p.name,
+    color: p.color,
+    meta: `${p.id} · Code tab ${p.isolate_code ? "separate" : "shared"}`,
+    copy: p,
+    warning: "Sign this one out and in with a different account.",
+    open: () => call("launch_profile", { id: p.id }),
+    extra: [remove],
+  });
 }
 
 let shown = "";
 
 // Redraws only when something changed, so a half-confirmed Remove click survives the periodic refresh.
 async function showProfiles() {
-  const list = await call("list_profiles");
-  const key = JSON.stringify(list);
+  const o = await call("overview");
+  const key = JSON.stringify(o);
   if (key === shown) return;
-  const countChanged = !shown || JSON.parse(shown).length !== list.length;
+  const countChanged = !shown || JSON.parse(shown).profiles.length !== o.profiles.length;
   shown = key;
-  $("profiles").replaceChildren(...list.map(profileItem));
-  $("empty").hidden = list.length > 0;
-  if (countChanged) $("add-color").value = PALETTE[list.length % PALETTE.length];
+  $("profiles").replaceChildren(mainItem(o.main), ...o.profiles.map(profileItem));
+  $("empty").hidden = o.profiles.length > 0;
+  if (countChanged) $("add-color").value = PALETTE[o.profiles.length % PALETTE.length];
 }
 
 // Sign-in happens in Claude's own windows, so look again now and then.
@@ -159,7 +185,7 @@ $("add-form").addEventListener("submit", async (e) => {
   const button = e.submitter;
   button.disabled = true;
   try {
-    const p = await call("add_profile", {
+    const name = await call("add_profile", {
       id: $("add-id").value.trim(),
       name: $("add-name").value,
       color: $("add-color").value,
@@ -167,7 +193,7 @@ $("add-form").addEventListener("submit", async (e) => {
     });
     e.target.reset();
     idEdited = false;
-    say(`Added ${p.name}. Click Open, then sign in with that account.`);
+    say(`Added ${name}. Click Open, then sign in with that account.`);
     await showProfiles();
   } catch {
     // message already shown

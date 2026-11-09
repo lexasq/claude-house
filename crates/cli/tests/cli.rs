@@ -51,7 +51,7 @@ fn err(out: &Output) -> String {
 #[test]
 fn list_is_empty_on_a_fresh_machine() {
     let s = Sandbox::new();
-    assert_eq!(ok(&s.ch(&["list"])), "No profiles. Add one with: ch add <id>\n");
+    assert_eq!(ok(&s.ch(&["list"])), "Main Claude  never opened\nNo profiles. Add one with: ch add <id>\n");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn add_then_list_shows_profiles_in_order() {
     ok(&s.ch(&["add", "home"]));
     assert_eq!(
         ok(&s.ch(&["list"])),
-        "work  Work account  #3366cc  code isolated  never opened\nhome  home  #d97757  code shared  never opened\n"
+        "Main Claude  never opened\nwork  Work account  #3366cc  code isolated  never opened\nhome  home  #d97757  code shared  never opened\n"
     );
     assert!(s.house().join("profiles.json").is_file());
 }
@@ -90,7 +90,8 @@ fn list_shows_sign_in_and_shared_accounts() {
     write_config(profile_config("broken"), "{oops");
     assert_eq!(
         ok(&s.ch(&["list"])),
-        "work  work  #d97757  code shared  signed in (same account as Twin)\n\
+        "Main Claude  signed in (same account as home)\n\
+         work  work  #d97757  code shared  signed in (same account as Twin)\n\
          home  home  #d97757  code shared  signed in (same account as main Claude)\n\
          spare  spare  #d97757  code shared  not signed in\n\
          broken  broken  #d97757  code shared  config unreadable\n\
@@ -125,7 +126,7 @@ fn remove_is_idempotent_and_keeps_the_data_folder() {
     std::fs::create_dir_all(&folder).unwrap();
     assert!(ok(&s.ch(&["remove", "work"])).contains(&folder.display().to_string()));
     ok(&s.ch(&["remove", "work"]));
-    assert_eq!(ok(&s.ch(&["list"])), "No profiles. Add one with: ch add <id>\n");
+    assert_eq!(ok(&s.ch(&["list"])), "Main Claude  never opened\nNo profiles. Add one with: ch add <id>\n");
     assert!(folder.is_dir());
 }
 

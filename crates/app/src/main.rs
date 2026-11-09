@@ -6,9 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use claude_house_cli::ops::{self, HandlerOwner, House, ProfileStatus};
+use claude_house_cli::ops::{self, CopyStatus, HandlerOwner, House, Overview};
 use claude_house_core::account::SignIn;
-use claude_house_core::profile::Profile;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -16,43 +15,55 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
 
 const TRAY_ID: &str = "main";
 
+/// Sign-in state of one Claude copy.
 #[derive(Serialize)]
-struct ProfileView {
-    id: String,
-    name: String,
-    color: String,
-    isolate_code: bool,
+struct CopyView {
     /// "never-opened", "signed-out", "signed-in" or "unreadable".
     sign_in: &'static str,
     /// Names of the other copies on the same account ("main Claude" for the stock copy).
     same_account_as: Vec<String>,
 }
 
-fn view(p: &Profile) -> ProfileView {
-    ProfileView {
-        id: p.id.as_str().to_owned(),
-        name: p.name.as_str().to_owned(),
-        color: p.color.as_str().to_owned(),
-        isolate_code: p.isolate_code,
-        sign_in: "never-opened",
-        same_account_as: vec![],
-    }
+#[derive(Serialize)]
+struct ProfileView {
+    id: String,
+    name: String,
+    color: String,
+    isolate_code: bool,
+    #[serde(flatten)]
+    copy: CopyView,
 }
 
-fn status_views(statuses: &[ProfileStatus]) -> Vec<ProfileView> {
-    statuses
-        .iter()
-        .map(|s| ProfileView {
-            sign_in: match s.sign_in {
-                SignIn::NeverOpened => "never-opened",
-                SignIn::SignedOut => "signed-out",
-                SignIn::SignedIn(_) => "signed-in",
-                SignIn::Unreadable => "unreadable",
-            },
-            same_account_as: ops::shared_names(statuses, s),
-            ..view(&s.profile)
-        })
-        .collect()
+#[derive(Serialize)]
+struct OverviewView {
+    main: CopyView,
+    profiles: Vec<ProfileView>,
+}
+
+fn overview_view(o: &Overview) -> OverviewView {
+    let copy = |c: &CopyStatus| CopyView {
+        sign_in: match c.sign_in {
+            SignIn::NeverOpened => "never-opened",
+            SignIn::SignedOut => "signed-out",
+            SignIn::SignedIn(_) => "signed-in",
+            SignIn::Unreadable => "unreadable",
+        },
+        same_account_as: o.names(&c.same_account_as),
+    };
+    OverviewView {
+        main: copy(&o.main),
+        profiles: o
+            .profiles
+            .iter()
+            .map(|(p, c)| ProfileView {
+                id: p.id.as_str().to_owned(),
+                name: p.name.as_str().to_owned(),
+                color: p.color.as_str().to_owned(),
+                isolate_code: p.isolate_code,
+                copy: copy(c),
+            })
+            .collect(),
+    }
 }
 
 #[derive(Serialize)]
@@ -78,8 +89,13 @@ struct AppState {
 }
 
 #[tauri::command]
-fn list_profiles(state: State<AppState>) -> Result<Vec<ProfileView>, String> {
-    Ok(status_views(&state.house.statuses()?))
+fn overview(state: State<AppState>) -> Result<OverviewView, String> {
+    Ok(overview_view(&state.house.overview()?))
+}
+
+#[tauri::command]
+fn launch_main(state: State<AppState>) -> Result<(), String> {
+    state.house.launch_main()
 }
 
 #[tauri::command]
@@ -90,11 +106,11 @@ fn add_profile(
     name: String,
     color: String,
     isolate_code: bool,
-) -> Result<ProfileView, String> {
+) -> Result<String, String> {
     let name = (!name.trim().is_empty()).then_some(name.as_str());
     let profile = state.house.add(&id, name, &color, isolate_code)?;
     refresh_tray(&app);
-    Ok(view(&profile))
+    Ok(profile.name.as_str().to_owned())
 }
 
 /// Returns the data folder, which is kept.
@@ -186,14 +202,13 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(app, "show", "Open Claude House", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "launch-main", "Open Main Claude", true, None::<&str>)?)?;
     let profiles = app.state::<AppState>().house.profiles().unwrap_or_default();
     for p in profiles.iter() {
         let label = format!("Open {}", p.name.as_str());
         menu.append(&MenuItem::with_id(app, format!("launch:{}", p.id.as_str()), label, true, None::<&str>)?)?;
     }
-    if profiles.iter().next().is_some() {
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)?;
     Ok(menu)
 }
@@ -225,10 +240,14 @@ fn on_menu(app: &AppHandle, id: &str) {
         "show" => show_main(app),
         "quit" => quit(app),
         _ => {
-            if let Some(profile) = id.strip_prefix("launch:") {
-                if let Err(e) = app.state::<AppState>().house.launch(profile) {
-                    let _ = app.emit("error", e);
-                }
+            let house = &app.state::<AppState>().house;
+            let result = match id.strip_prefix("launch:") {
+                Some(profile) => house.launch(profile),
+                None if id == "launch-main" => house.launch_main(),
+                None => Ok(()),
+            };
+            if let Err(e) = result {
+                let _ = app.emit("error", e);
             }
         }
     }
@@ -240,7 +259,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .manage(AppState { house, router: Mutex::new(None), router_error: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
-            list_profiles,
+            overview,
+            launch_main,
             add_profile,
             remove_profile,
             launch_profile,

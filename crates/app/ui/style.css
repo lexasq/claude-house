@@ -63,6 +63,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .badge.todo { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .warn { color: var(--warn); font-size: 12px; margin-top: 2px; }
 .empty { color: var(--muted); margin: 0; }
+.main-copy { border-style: dashed; }
 
 form { display: grid; gap: 12px; }
 label { display: grid; gap: 4px; font-weight: 500; }
