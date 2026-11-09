@@ -26,9 +26,26 @@
     </section>
 
     <section aria-labelledby="profiles-title">
-      <h2 id="profiles-title">Claude windows</h2>
+      <h2 id="profiles-title">Accounts</h2>
       <ul id="profiles" class="profiles"></ul>
-      <p id="empty" class="card empty" hidden>No profiles yet. Add one below for another account, then open it and sign in.</p>
+      <p id="empty" class="card empty" hidden>No accounts yet. Add one below, open it and sign in. Each account keeps its own sessions.</p>
+    </section>
+
+    <section id="main-section" class="card main-copy" aria-labelledby="main-title" hidden>
+      <div class="main-head">
+        <div>
+          <h2 id="main-title">Main Claude <span id="main-badge" class="badge"></span></h2>
+          <p id="main-text" class="muted"></p>
+        </div>
+        <button id="main-open" type="button">Open</button>
+      </div>
+      <form id="import-form" class="import" autocomplete="off" hidden>
+        <label>Import it as an account named
+          <input id="import-name" required maxlength="64" value="Main account">
+        </label>
+        <button type="submit" class="primary">Import</button>
+      </form>
+      <p id="main-warn" class="warn" hidden></p>
     </section>
 
     <section class="card" aria-labelledby="add-title">

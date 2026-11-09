@@ -4,6 +4,19 @@ Run several Claude Desktop accounts side by side on Windows. Each account (profi
 
 Status: phase 2 of 6 — command-line tool `ch`. Findings: [docs/phase0-findings.md](docs/phase0-findings.md). Terms: [docs/glossary.md](docs/glossary.md).
 
+## How to use it
+
+Every account is a profile; Claude House is the way in.
+
+1. Run `claude-house.exe` and turn on **Login routing** (lets Google sign-in reach the right window).
+2. Add an account, click **Open**, sign in in the window that opens. Repeat for each account.
+3. Each account keeps its own sign-in and Code sessions; nothing is shared between them.
+
+Already using Claude Desktop? Its sessions live in its own folder (`%APPDATA%\Claude`). Quit it, then
+use **Import** in the *Main Claude* section (or `ch import-main <id>`) to copy it into an account. Keep
+Main Claude closed afterwards and turn off its "start with Windows" setting: two copies on one sign-in
+can sign each other out.
+
 ## Build
 
 ```powershell

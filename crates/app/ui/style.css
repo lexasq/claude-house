@@ -30,6 +30,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Class rules that set display (flex, grid) would otherwise show hidden elements. */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); }
 main { max-width: 720px; margin: 0 auto; padding: 24px 20px 32px; display: grid; gap: 20px; }
 h1 { font-size: 22px; margin: 0; }
@@ -63,7 +65,12 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .badge.todo { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .warn { color: var(--warn); font-size: 12px; margin-top: 2px; }
 .empty { color: var(--muted); margin: 0; }
-.main-copy { border-style: dashed; }
+.main-copy { border-style: dashed; display: grid; gap: 12px; }
+.main-copy h2 { margin: 0; }
+.main-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.import { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.import label { flex: 1 1 220px; }
+.main-copy .warn { margin: 0; }
 
 form { display: grid; gap: 12px; }
 label { display: grid; gap: 4px; font-weight: 500; }
