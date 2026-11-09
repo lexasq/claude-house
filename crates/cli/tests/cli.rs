@@ -202,6 +202,18 @@ fn login_link_goes_to_profile_with_newest_login_start() {
 }
 
 #[test]
+fn login_start_is_found_behind_a_large_log() {
+    let s = Sandbox::new();
+    ok(&s.ch(&["add", "work"]));
+    log_login(&s.profile_log("work"), 2);
+    // Several MB of later logging, like a long-running Claude: the start is far from the end.
+    let filler = "2026-01-01 00:00:00 [info] [Other] something unrelated happened here\n".repeat(60_000);
+    let mut f = std::fs::OpenOptions::new().append(true).open(s.profile_log("work")).unwrap();
+    std::io::Write::write_all(&mut f, filler.as_bytes()).unwrap();
+    assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: work\n"));
+}
+
+#[test]
 fn login_link_goes_to_stock_when_it_started_last() {
     let s = Sandbox::new();
     ok(&s.ch(&["add", "work"]));
@@ -255,6 +267,7 @@ fn ch_link_logs_outcome_without_the_login_code() {
     assert!(lines[0].contains("error: cannot start"), "{log}");
     assert!(lines[1].contains("error: ") && lines[1].contains("not a claude:// link"), "{log}");
     assert!(!log.contains("SECRET123"), "login code leaked into the log: {log}");
+    assert!(!log.contains("SECRET456") && !log.contains("example.com"), "a rejected link leaked into the log: {log}");
 }
 
 #[test]

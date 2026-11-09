@@ -149,7 +149,9 @@ impl House {
 
     /// Where `url` goes and the command that delivers it.
     pub fn link_plan(&self, url: &str) -> Result<(Target, LaunchSpec), String> {
-        let link = ClaudeLink::parse(url).map_err(|_| format!("{url:?} is not a claude:// link"))?;
+        // The link is never echoed back: a link handed to us may carry a one-time login code,
+        // and this message can end up in ch-link.log.
+        let link = ClaudeLink::parse(url).map_err(|_| "that is not a claude:// link".to_owned())?;
         let list = self.profiles()?;
         let target = route(&link, &self.login_starts(&list));
         let app = self.installed_app()?;
@@ -171,7 +173,7 @@ impl House {
 
     /// Last login start of the stock copy and of every profile, from their logs. Unreadable logs count as none.
     fn login_starts(&self, list: &ProfileList) -> Vec<(Target, LogTime)> {
-        let last = |log: &Path| std::fs::read_to_string(log).ok().as_deref().and_then(last_login_start);
+        let last = |log: &Path| last_login_start_in_file(log, 64 * 1024);
         let profiles = list
             .iter()
             .map(|p| (Target::Profile(p.id.clone()), profile_dir(&self.root, &p.id).join("logs").join("main.log")));
@@ -237,6 +239,33 @@ pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) 
     Ok(())
 }
 
+/// The newest login start in a log file, reading backwards in `chunk`-byte steps and stopping at
+/// the first match. Claude's main.log grows to ~10 MB; the newest start is usually near its end.
+/// A missing or unreadable file has none.
+fn last_login_start_in_file(path: &Path, chunk: u64) -> Option<LogTime> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut end = file.metadata().ok()?.len();
+    // Bytes after `end` that belong to a line whose start we have not read yet.
+    let mut tail: Vec<u8> = Vec::new();
+    while end > 0 {
+        let start = end.saturating_sub(chunk);
+        let mut buf = vec![0; usize::try_from(end - start).ok()?];
+        file.seek(SeekFrom::Start(start)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        buf.extend_from_slice(&tail);
+        // Unless we reached the file start, the text before the first newline may be a partial line:
+        // keep it for the next (earlier) chunk and search only what follows it.
+        let cut = if start == 0 { 0 } else { buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len()) };
+        if let Some(found) = last_login_start(&String::from_utf8_lossy(&buf[cut..])) {
+            return Some(found);
+        }
+        tail = buf[..cut].to_vec();
+        end = start;
+    }
+    None
+}
+
 /// A missing file means the copy was never opened; any other read failure is unreadable.
 fn read_sign_in(config: &Path) -> SignIn {
     match std::fs::read_to_string(config) {
@@ -272,4 +301,38 @@ fn spawn(spec: &LaunchSpec) -> Result<(), String> {
         .spawn()
         .map(drop)
         .map_err(|e| format!("cannot start {}: {e}", spec.program.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const START: &str = "[info] [Auth] Using system browser for: /login/app-google-auth";
+
+    fn newest(text: &str, chunk: u64) -> Option<LogTime> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("main.log");
+        std::fs::write(&path, text).unwrap();
+        last_login_start_in_file(&path, chunk)
+    }
+
+    #[test]
+    fn backward_scan_matches_a_whole_file_read_for_every_chunk_size() {
+        let log = format!(
+            "2026-11-09 10:00:00 {START}\n2026-11-09 10:00:01 [info] other\n2026-11-09 11:00:00 {START}\n2026-11-09 11:00:05 [info] last line without newline"
+        );
+        let expected = last_login_start(&log);
+        assert!(expected.is_some());
+        // Tiny chunks split lines at every possible place, including inside the timestamp.
+        for chunk in 1..=log.len() as u64 + 1 {
+            assert_eq!(newest(&log, chunk), expected, "chunk size {chunk}");
+        }
+    }
+
+    #[test]
+    fn no_start_missing_file_and_empty_file_give_none() {
+        assert_eq!(newest("2026-11-09 10:00:00 [info] other\n", 8), None);
+        assert_eq!(newest("", 8), None);
+        assert_eq!(last_login_start_in_file(Path::new(r"C:\no\such\main.log"), 8), None);
+    }
 }
