@@ -186,6 +186,33 @@ fn open_link_rejects_non_claude_urls() {
     assert!(err(&s.ch(&["open-link", "https://claude.ai", "--dry-run"])).contains("not a claude:// link"));
 }
 
+impl Sandbox {
+    fn ch_link(&self, url: &str) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_ch-link"))
+            .arg(url)
+            .env("APPDATA", &self.appdata)
+            .env("LOCALAPPDATA", &self.localappdata)
+            .output()
+            .unwrap()
+    }
+}
+
+#[test]
+fn ch_link_logs_outcome_without_the_login_code() {
+    let s = Sandbox::new();
+    // The sandbox has app folders but no real claude.exe, so handing the link over fails.
+    let out = s.ch_link("claude://login/google-auth?code=SECRET123&hop_nonce=n");
+    assert!(!out.status.success());
+    let bad = s.ch_link("https://example.com/?code=SECRET456");
+    assert!(!bad.status.success());
+    let log = std::fs::read_to_string(s.house().join("ch-link.log")).unwrap();
+    let lines: Vec<&str> = log.lines().collect();
+    assert_eq!(lines.len(), 2, "{log}");
+    assert!(lines[0].contains("error: cannot start"), "{log}");
+    assert!(lines[1].contains("error: ") && lines[1].contains("not a claude:// link"), "{log}");
+    assert!(!log.contains("SECRET123"), "login code leaked into the log: {log}");
+}
+
 #[test]
 fn corrupt_profile_list_is_reported_not_overwritten() {
     let s = Sandbox::new();
