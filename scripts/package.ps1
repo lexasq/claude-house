@@ -2,7 +2,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 #
-# Result: dist\ClaudeHouse\  (claude-house.exe, ch-link.exe, ch.exe, README.md)
+# Result: dist\ClaudeHouse\  (claude-house.exe, ch-link.exe, ch.exe, README.md, LICENSE)
 #         dist\ClaudeHouse.zip
 #
 # The three programs must stay in the same folder: the app registers ch-link.exe from its own folder

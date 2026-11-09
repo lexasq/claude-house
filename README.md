@@ -20,18 +20,23 @@ It does not modify Claude Desktop, read your conversations, or talk to the netwo
   The Microsoft Store version has not been tested.
 - WebView2 runtime (already part of Windows 11 and current Windows 10).
 
-## Use the ready-made folder
+## Download and use
 
-1. Get the `ClaudeHouse` folder (build it yourself with `scripts\package.ps1`, see [Build](#build)).
-   Put it somewhere permanent, e.g. `%LOCALAPPDATA%\Programs\ClaudeHouse`.
+1. Download **`ClaudeHouse.zip`** from the
+   [latest release](https://github.com/lexasq/claude-house/releases/latest)
+   (or with the GitHub CLI: `gh release download -R lexasq/claude-house -p ClaudeHouse.zip`).
+2. Unzip it somewhere permanent, e.g. `%LOCALAPPDATA%\Programs\ClaudeHouse`.
    **Keep the three programs together**: `claude-house.exe`, `ch-link.exe`, `ch.exe`.
-2. Run **`claude-house.exe`**. A window opens and a Claude House icon appears in the tray.
-3. Turn on **Login routing**. (Only needed for Google sign-in; it can be turned off at any time.)
-4. Your existing Claude Desktop appears as **Main account**. Nothing to do there.
-5. Under **Add an account**, give the account a name and click **Add account**.
-6. Click **Open** on it. A new Claude Desktop window opens on its sign-in screen. Sign in with that account.
+   (Prefer to build it yourself? See [Build](#build).)
+3. Run **`claude-house.exe`**. A window opens and a Claude House icon appears in the tray.
+   The programs are not code-signed, so the first time Windows may show *"Windows protected your PC"*:
+   click **More info → Run anyway**.
+4. Turn on **Login routing**. (Only needed for Google sign-in; it can be turned off at any time.)
+5. Your existing Claude Desktop appears as **Main account**. Nothing to do there.
+6. Under **Add an account**, give the account a name and click **Add account**.
+7. Click **Open** on it. A new Claude Desktop window opens on its sign-in screen. Sign in with that account.
    Within a few seconds Claude House shows it as **Signed in**.
-7. Repeat 5–6 for every other account.
+8. Repeat 6–7 for every other account.
 
 Later, open any account from the window or from the tray icon's menu. Closing the window keeps Claude
 House in the tray, so login routing keeps working; **Quit** in the tray menu stops it.
