@@ -12,5 +12,7 @@
 | **App folder** | One `app-<major>.<minor>.<patch>` folder inside the Claude install. Claude House launches the newest. |
 | **Launch spec** | The program, arguments and environment for starting one profile's copy. Built by a pure function. |
 | **Claude link** | A `claude://` URL handed to Claude by Windows. A **login link** has host `login` (e.g. `claude://login/google-auth?code=…`). |
-| **Pending login** | The one profile currently waiting for a login link. At most one at a time. |
-| **Route** | Where a Claude link goes: to a profile, or to the stock (default) Claude copy. |
+| **Login start** | A `[Auth] Using system browser for: /login/…` line in a copy's `main.log`. Profiles log to `<profile folder>\logs\main.log`; the stock copy to `%LOCALAPPDATA%\Claude\Logs\main.log`. |
+| **Login window** | 15 minutes. A login link goes to the copy with the newest login start inside this window. |
+| **Stock copy** | The ordinary Claude Desktop copy using `%APPDATA%\Claude`, not managed as a profile. |
+| **Target / route** | Where a Claude link goes: a profile or the stock copy. Non-login links and logins with no recent start go to the stock copy. |
