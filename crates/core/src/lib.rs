@@ -2,5 +2,6 @@
 //! Terms are defined in `docs/glossary.md`.
 
 pub mod install;
+pub mod launch;
 pub mod link;
 pub mod profile;
