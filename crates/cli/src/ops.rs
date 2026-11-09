@@ -161,7 +161,8 @@ pub fn take_handler() -> Result<(), String> {
     write_handler(&handler_command(&link_exe()?))
 }
 
-/// Keeps `claude://` pointed at Claude House until `stop` is set (checked at least every 5 s).
+/// Keeps `claude://` pointed at Claude House until `stop` is set (checked at least every second,
+/// so a caller that joins the thread waits at most that long).
 /// Calls `on_take` with the command it replaced each time it takes the handler back.
 pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) -> Result<(), String> {
     let ours = handler_command(&link_exe()?);
@@ -171,7 +172,7 @@ pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) 
             write_handler(&ours)?;
             on_take(current);
         }
-        registry::wait_for_change(std::time::Duration::from_secs(5));
+        registry::wait_for_change(std::time::Duration::from_secs(1));
     }
     Ok(())
 }

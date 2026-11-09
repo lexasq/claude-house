@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude House</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Claude House</h1>
+      <p class="sub">Each profile is a separate Claude Desktop sign-in with its own data folder.</p>
+    </header>
+
+    <section class="card routing" aria-labelledby="routing-title">
+      <div>
+        <h2 id="routing-title">Login routing</h2>
+        <p id="routing-text" class="muted">Checking…</p>
+      </div>
+      <label class="switch">
+        <input id="routing-toggle" type="checkbox" disabled>
+        <span class="track" aria-hidden="true"></span>
+        <span class="sr">Send Google logins to the profile that started them</span>
+      </label>
+    </section>
+
+    <section aria-labelledby="profiles-title">
+      <h2 id="profiles-title">Profiles</h2>
+      <ul id="profiles" class="profiles"></ul>
+      <p id="empty" class="card empty" hidden>No profiles yet. Add one below, then open it and sign in.</p>
+    </section>
+
+    <section class="card" aria-labelledby="add-title">
+      <h2 id="add-title">Add a profile</h2>
+      <form id="add-form" autocomplete="off">
+        <label>Name
+          <input id="add-name" required maxlength="64" placeholder="Work account">
+        </label>
+        <label>ID <span class="muted">— used for its folder, can't change later</span>
+          <input id="add-id" required maxlength="32" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="work-account">
+        </label>
+        <div class="row">
+          <label class="color">Colour
+            <input id="add-color" type="color" value="#d97757">
+          </label>
+          <label class="check">
+            <input id="add-isolate" type="checkbox">
+            Separate Code tab settings
+          </label>
+        </div>
+        <button type="submit" class="primary">Add profile</button>
+      </form>
+    </section>
+
+    <p id="message" class="message" role="status" aria-live="polite"></p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
