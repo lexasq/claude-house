@@ -106,28 +106,17 @@ function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   return li;
 }
 
-// The stock copy's name in `same_account_as` (set by ops::Overview::names).
-const MAIN = "main Claude";
-
-/// Main Claude is not one of the accounts: shown apart, only while it has data, with a way to import it.
-function showMain(main) {
-  $("main-section").hidden = main.sign_in === "never-opened";
-  const [label, cls] = SIGN_IN[main.sign_in];
-  $("main-badge").textContent = label;
-  $("main-badge").className = `badge ${cls}`;
-  const signedIn = main.sign_in === "signed-in";
-  const imported = main.same_account_as.length > 0;
-  $("main-text").textContent = !signedIn
-    ? "Claude Desktop outside Claude House. Not needed: every account can be a profile."
-    : imported
-      ? "Claude Desktop outside Claude House. Keep it closed and use the account here instead."
-      : "Claude Desktop outside Claude House. Import it to keep its sign-in and Code sessions as an account here.";
-  $("import-form").hidden = !signedIn || imported;
-  const warn = $("main-warn");
-  warn.hidden = !imported;
-  warn.textContent = imported
-    ? `Same account as ${main.same_account_as.join(", ")}. Running both can sign one of them out; quit Main Claude and turn off its "start with Windows" setting.`
-    : "";
+function mainItem(main) {
+  const li = copyItem({
+    name: "Main Claude",
+    color: "var(--muted)",
+    meta: "Your usual Claude Desktop. Its Code sessions stay here.",
+    copy: main,
+    warning: "Keep your main account here and use profiles for other accounts.",
+    open: () => call("launch_main"),
+  });
+  li.classList.add("main-copy");
+  return li;
 }
 
 function profileItem(p) {
@@ -156,8 +145,7 @@ function profileItem(p) {
     name: p.name,
     color: p.color,
     meta: `${p.id} · Code tab ${p.isolate_code ? "separate" : "shared"}`,
-    // Sharing with Main Claude is expected after an import; the Main Claude section covers it.
-    copy: { ...p, same_account_as: p.same_account_as.filter((n) => n !== MAIN) },
+    copy: p,
     warning: "Sign this one out and in with a different account.",
     open: () => call("launch_profile", { id: p.id }),
     extra: [remove],
@@ -173,34 +161,10 @@ async function showProfiles() {
   if (key === shown) return;
   const countChanged = !shown || JSON.parse(shown).profiles.length !== o.profiles.length;
   shown = key;
-  $("profiles").replaceChildren(...o.profiles.map(profileItem));
-  showMain(o.main);
+  $("profiles").replaceChildren(mainItem(o.main), ...o.profiles.map(profileItem));
   $("empty").hidden = o.profiles.length > 0;
   if (countChanged) $("add-color").value = PALETTE[o.profiles.length % PALETTE.length];
 }
-
-$("main-open").addEventListener("click", async () => {
-  await call("launch_main");
-  say("Opening Main Claude.");
-});
-
-$("import-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const button = e.submitter;
-  button.disabled = true;
-  const name = $("import-name").value;
-  say("Copying Main Claude's data. This can take a minute…");
-  try {
-    const done = await call("import_main", { id: slug(name) || "main", name, color: PALETTE[0] });
-    say(`Imported as ${done}. Open it from the list; its Code sessions came along.`);
-    shown = "";
-    await showProfiles();
-  } catch {
-    // message already shown
-  } finally {
-    button.disabled = false;
-  }
-});
 
 // Sign-in happens in Claude's own windows, so look again now and then.
 setInterval(() => { if (!document.hidden) showProfiles().catch(() => {}); }, 5000);

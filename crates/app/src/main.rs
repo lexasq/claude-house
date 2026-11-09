@@ -98,15 +98,6 @@ fn launch_main(state: State<AppState>) -> Result<(), String> {
     state.house.launch_main()
 }
 
-/// Runs off the UI thread: copying Main Claude's folder takes a while.
-#[tauri::command(async)]
-fn import_main(app: AppHandle, state: State<AppState>, id: String, name: String, color: String) -> Result<String, String> {
-    let name = (!name.trim().is_empty()).then_some(name.as_str());
-    let profile = state.house.import_main(&id, name, &color)?;
-    refresh_tray(&app);
-    Ok(profile.name.as_str().to_owned())
-}
-
 #[tauri::command]
 fn add_profile(
     app: AppHandle,
@@ -211,6 +202,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(app, "show", "Open Claude House", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "launch-main", "Open Main Claude", true, None::<&str>)?)?;
     let profiles = app.state::<AppState>().house.profiles().unwrap_or_default();
     for p in profiles.iter() {
         let label = format!("Open {}", p.name.as_str());
@@ -249,7 +241,11 @@ fn on_menu(app: &AppHandle, id: &str) {
         "quit" => quit(app),
         _ => {
             let house = &app.state::<AppState>().house;
-            let result = id.strip_prefix("launch:").map_or(Ok(()), |profile| house.launch(profile));
+            let result = match id.strip_prefix("launch:") {
+                Some(profile) => house.launch(profile),
+                None if id == "launch-main" => house.launch_main(),
+                None => Ok(()),
+            };
             if let Err(e) = result {
                 let _ = app.emit("error", e);
             }
@@ -265,7 +261,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             overview,
             launch_main,
-            import_main,
             add_profile,
             remove_profile,
             launch_profile,
