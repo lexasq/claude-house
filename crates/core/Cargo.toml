@@ -2,6 +2,7 @@
 name = "claude-house-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Rules for Claude House as pure functions (profiles, launch commands, claude:// routing, sign-in state), plus profiles.json storage."
 
 [dependencies]

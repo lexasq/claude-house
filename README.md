@@ -99,7 +99,7 @@ Then, from the repository folder:
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 ```
 
-This builds release versions and writes `dist\ClaudeHouse\` (the three programs and this README) and
+This builds release versions and writes `dist\ClaudeHouse\` (the three programs, this README and the license) and
 `dist\ClaudeHouse.zip`. If Claude House is running from `target\release`, quit it first (Windows
 cannot replace a running program).
 
@@ -150,3 +150,7 @@ the app's routing switch are checked by hand.
 Working: separate accounts, login routing, sign-in state, window and tray, command line.
 Not yet: an installer, start with Windows, tested behaviour across Claude Desktop updates
 (see *Still open* in the findings).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

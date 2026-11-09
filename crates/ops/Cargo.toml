@@ -2,6 +2,7 @@
 name = "claude-house-ops"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Claude House operations with effects (files, processes, registry), shared by the ch CLI, ch-link and the app."
 
 [dependencies]

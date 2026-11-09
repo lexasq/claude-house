@@ -24,7 +24,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 foreach ($exe in 'claude-house.exe', 'ch-link.exe', 'ch.exe') {
     Copy-Item (Join-Path $root "target\release\$exe") $out
 }
-Copy-Item (Join-Path $root 'README.md') $out
+Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') $out
 
 $zip = Join-Path $root 'dist\ClaudeHouse.zip'
 if (Test-Path $zip) { Remove-Item -Force $zip }
