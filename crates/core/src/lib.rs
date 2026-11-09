@@ -6,5 +6,6 @@ pub mod handler;
 pub mod install;
 pub mod launch;
 pub mod link;
+pub mod process;
 pub mod profile;
 pub mod store;
