@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use claude_house_core::account::{shared_accounts, sign_in_state, SignIn};
 use claude_house_core::handler::{handler_command, is_handled_by};
 use claude_house_core::install::{newest_app, AppVersion};
 use claude_house_core::launch::{claude_exe, profile_spec, stock_spec, LaunchSpec};
@@ -20,6 +21,29 @@ pub struct House {
     install_root: PathBuf,
     /// The stock copy's log, where it records login starts.
     stock_log: PathBuf,
+    /// The stock copy's `config.json`, where it records who is signed in.
+    stock_config: PathBuf,
+}
+
+/// A profile with its sign-in state and the other copies on the same account.
+pub struct ProfileStatus {
+    pub profile: Profile,
+    pub sign_in: SignIn,
+    pub same_account_as: Vec<Target>,
+}
+
+/// Display names of the copies `status` shares its account with ("main Claude" for the stock copy).
+pub fn shared_names(statuses: &[ProfileStatus], status: &ProfileStatus) -> Vec<String> {
+    status
+        .same_account_as
+        .iter()
+        .map(|t| match t {
+            Target::Stock => "main Claude".to_owned(),
+            Target::Profile(id) => {
+                statuses.iter().find(|s| &s.profile.id == id).map_or(id.as_str(), |s| s.profile.name.as_str()).to_owned()
+            }
+        })
+        .collect()
 }
 
 /// Who `claude://` links currently go to.
@@ -33,12 +57,34 @@ pub enum HandlerOwner {
 impl House {
     pub fn from_process() -> Result<Self, String> {
         let var = |k: &str| std::env::var_os(k).map(PathBuf::from).ok_or(format!("{k} is not set"));
-        let local = var("LOCALAPPDATA")?;
+        let (local, roaming) = (var("LOCALAPPDATA")?, var("APPDATA")?);
         Ok(House {
-            root: var("APPDATA")?.join("ClaudeHouse"),
+            root: roaming.join("ClaudeHouse"),
             install_root: local.join("AnthropicClaude"),
             stock_log: local.join("Claude").join("Logs").join("main.log"),
+            stock_config: roaming.join("Claude").join("config.json"),
         })
+    }
+
+    /// Every profile with its sign-in state; the stock copy counts when looking for shared accounts.
+    pub fn statuses(&self) -> Result<Vec<ProfileStatus>, String> {
+        let list = self.profiles()?;
+        let states: Vec<(Target, SignIn)> = std::iter::once((Target::Stock, read_sign_in(&self.stock_config)))
+            .chain(list.iter().map(|p| {
+                let config = profile_dir(&self.root, &p.id).join("config.json");
+                (Target::Profile(p.id.clone()), read_sign_in(&config))
+            }))
+            .collect();
+        let shared = shared_accounts(&states);
+        Ok(list
+            .iter()
+            .zip(states.into_iter().skip(1))
+            .map(|(profile, (target, sign_in))| ProfileStatus {
+                profile: profile.clone(),
+                sign_in,
+                same_account_as: shared.iter().find(|(t, _)| *t == target).map(|(_, o)| o.clone()).unwrap_or_default(),
+            })
+            .collect())
     }
 
     fn list_path(&self) -> PathBuf {
@@ -175,6 +221,15 @@ pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) 
         registry::wait_for_change(std::time::Duration::from_secs(1));
     }
     Ok(())
+}
+
+/// A missing file means the copy was never opened; any other read failure is unreadable.
+fn read_sign_in(config: &Path) -> SignIn {
+    match std::fs::read_to_string(config) {
+        Ok(text) => sign_in_state(Some(&text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => sign_in_state(None),
+        Err(_) => SignIn::Unreadable,
+    }
 }
 
 fn write_handler(command: &str) -> Result<(), String> {

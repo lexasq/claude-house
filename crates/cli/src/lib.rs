@@ -9,8 +9,8 @@ use std::sync::atomic::AtomicBool;
 use clap::{Parser, Subcommand};
 use claude_house_core::launch::LaunchSpec;
 use claude_house_core::link::Target;
-use claude_house_core::store::ProfileList;
-use ops::{HandlerOwner, House};
+use claude_house_core::account::SignIn;
+use ops::{HandlerOwner, House, ProfileStatus};
 
 #[derive(Parser)]
 #[command(name = "ch", about = "Run several Claude Desktop accounts side by side")]
@@ -89,7 +89,7 @@ pub fn ch_main() -> ExitCode {
 
 fn run(cmd: Cmd, house: &House) -> Result<String, String> {
     match cmd {
-        Cmd::List => Ok(render(&house.profiles()?)),
+        Cmd::List => Ok(render(&house.statuses()?)),
         Cmd::Add { id, name, color, isolate_code } => {
             house.add(&id, name.as_deref(), &color, isolate_code).map(|_| format!("Added {id}.\n"))
         }
@@ -138,12 +138,21 @@ fn watch() -> Result<String, String> {
     Ok(String::new())
 }
 
-fn render(list: &ProfileList) -> String {
+fn render(list: &[ProfileStatus]) -> String {
     let lines: String = list
         .iter()
-        .map(|p| {
+        .map(|s| {
+            let p = &s.profile;
             let code = if p.isolate_code { "code isolated" } else { "code shared" };
-            format!("{}  {}  {}  {code}\n", p.id.as_str(), p.name.as_str(), p.color.as_str())
+            let sign_in = match s.sign_in {
+                SignIn::NeverOpened => "never opened",
+                SignIn::SignedOut => "not signed in",
+                SignIn::SignedIn(_) => "signed in",
+                SignIn::Unreadable => "config unreadable",
+            };
+            let names = ops::shared_names(list, s);
+            let shared = if names.is_empty() { String::new() } else { format!(" (same account as {})", names.join(", ")) };
+            format!("{}  {}  {}  {code}  {sign_in}{shared}\n", p.id.as_str(), p.name.as_str(), p.color.as_str())
         })
         .collect();
     if lines.is_empty() { "No profiles. Add one with: ch add <id>\n".to_owned() } else { lines }

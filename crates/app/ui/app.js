@@ -55,6 +55,13 @@ $("routing-toggle").addEventListener("change", async (e) => {
 
 // ---- Profiles ----
 
+const SIGN_IN = {
+  "signed-in": ["Signed in", "ok"],
+  "signed-out": ["Not signed in", "todo"],
+  "never-opened": ["Not opened yet", "todo"],
+  unreadable: ["Status unknown", "todo"],
+};
+
 function profileItem(p) {
   const li = document.createElement("li");
   li.className = "card profile";
@@ -67,10 +74,21 @@ function profileItem(p) {
   const name = document.createElement("div");
   name.className = "name";
   name.textContent = p.name;
+  const [label, cls] = SIGN_IN[p.sign_in];
+  const badge = document.createElement("span");
+  badge.className = `badge ${cls}`;
+  badge.textContent = label;
+  name.append(" ", badge);
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = `${p.id} · Code tab ${p.isolate_code ? "separate" : "shared"}`;
   info.append(name, meta);
+  if (p.same_account_as.length) {
+    const warn = document.createElement("div");
+    warn.className = "warn";
+    warn.textContent = `Same account as ${p.same_account_as.join(", ")}. Sign this one out and in with a different account.`;
+    info.append(warn);
+  }
 
   const open = document.createElement("button");
   open.className = "primary";
@@ -108,12 +126,23 @@ function profileItem(p) {
   return li;
 }
 
+let shown = "";
+
+// Redraws only when something changed, so a half-confirmed Remove click survives the periodic refresh.
 async function showProfiles() {
   const list = await call("list_profiles");
+  const key = JSON.stringify(list);
+  if (key === shown) return;
+  const countChanged = !shown || JSON.parse(shown).length !== list.length;
+  shown = key;
   $("profiles").replaceChildren(...list.map(profileItem));
   $("empty").hidden = list.length > 0;
-  $("add-color").value = PALETTE[list.length % PALETTE.length];
+  if (countChanged) $("add-color").value = PALETTE[list.length % PALETTE.length];
 }
+
+// Sign-in happens in Claude's own windows, so look again now and then.
+setInterval(() => { if (!document.hidden) showProfiles().catch(() => {}); }, 5000);
+window.addEventListener("focus", () => showProfiles().catch(() => {}));
 
 // ---- Add form ----
 

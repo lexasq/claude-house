@@ -59,9 +59,52 @@ fn add_then_list_shows_profiles_in_order() {
     ok(&s.ch(&["add", "home"]));
     assert_eq!(
         ok(&s.ch(&["list"])),
-        "work  Work account  #3366cc  code isolated\nhome  home  #d97757  code shared\n"
+        "work  Work account  #3366cc  code isolated  never opened\nhome  home  #d97757  code shared  never opened\n"
     );
     assert!(s.house().join("profiles.json").is_file());
+}
+
+fn write_config(path: PathBuf, json: &str) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, json).unwrap();
+}
+
+#[test]
+fn list_shows_sign_in_and_shared_accounts() {
+    let s = Sandbox::new();
+    for id in ["work", "home", "spare", "broken", "locked"] {
+        ok(&s.ch(&["add", id]));
+    }
+    ok(&s.ch(&["add", "twin", "--name", "Twin"]));
+    write_config(s.house().join("profiles").join("twin").join("config.json"), &format!(
+        r#"{{"windowSizeWasSignedIn":true,"lastKnownAccountUuid":"acct-b"}}"#
+    ));
+    // A folder where the file should be: exists, but cannot be read.
+    std::fs::create_dir_all(s.house().join("profiles").join("locked").join("config.json")).unwrap();
+    let profile_config = |id: &str| s.house().join("profiles").join(id).join("config.json");
+    let signed = |acct: &str| format!(r#"{{"windowSizeWasSignedIn":true,"lastKnownAccountUuid":"{acct}","oauth:tokenCacheV2":"x"}}"#);
+    write_config(s.appdata.join("Claude").join("config.json"), &signed("acct-a"));
+    write_config(profile_config("work"), &signed("acct-b"));
+    write_config(profile_config("home"), &signed("acct-a"));
+    write_config(profile_config("spare"), r#"{"windowSizeWasSignedIn":false}"#);
+    write_config(profile_config("broken"), "{oops");
+    assert_eq!(
+        ok(&s.ch(&["list"])),
+        "work  work  #d97757  code shared  signed in (same account as Twin)\n\
+         home  home  #d97757  code shared  signed in (same account as main Claude)\n\
+         spare  spare  #d97757  code shared  not signed in\n\
+         broken  broken  #d97757  code shared  config unreadable\n\
+         locked  locked  #d97757  code shared  config unreadable\n\
+         twin  Twin  #d97757  code shared  signed in (same account as work)\n"
+    );
+}
+
+#[test]
+fn launch_reports_when_claude_cannot_start() {
+    let s = Sandbox::new();
+    ok(&s.ch(&["add", "work"]));
+    // The sandbox has app folders but no claude.exe.
+    assert!(err(&s.ch(&["launch", "work"])).contains("cannot start"));
 }
 
 #[test]

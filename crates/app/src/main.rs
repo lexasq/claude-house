@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use claude_house_cli::ops::{self, HandlerOwner, House};
+use claude_house_cli::ops::{self, HandlerOwner, House, ProfileStatus};
+use claude_house_core::account::SignIn;
 use claude_house_core::profile::Profile;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -21,6 +22,10 @@ struct ProfileView {
     name: String,
     color: String,
     isolate_code: bool,
+    /// "never-opened", "signed-out", "signed-in" or "unreadable".
+    sign_in: &'static str,
+    /// Names of the other copies on the same account ("main Claude" for the stock copy).
+    same_account_as: Vec<String>,
 }
 
 fn view(p: &Profile) -> ProfileView {
@@ -29,7 +34,25 @@ fn view(p: &Profile) -> ProfileView {
         name: p.name.as_str().to_owned(),
         color: p.color.as_str().to_owned(),
         isolate_code: p.isolate_code,
+        sign_in: "never-opened",
+        same_account_as: vec![],
     }
+}
+
+fn status_views(statuses: &[ProfileStatus]) -> Vec<ProfileView> {
+    statuses
+        .iter()
+        .map(|s| ProfileView {
+            sign_in: match s.sign_in {
+                SignIn::NeverOpened => "never-opened",
+                SignIn::SignedOut => "signed-out",
+                SignIn::SignedIn(_) => "signed-in",
+                SignIn::Unreadable => "unreadable",
+            },
+            same_account_as: ops::shared_names(statuses, s),
+            ..view(&s.profile)
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -56,7 +79,7 @@ struct AppState {
 
 #[tauri::command]
 fn list_profiles(state: State<AppState>) -> Result<Vec<ProfileView>, String> {
-    Ok(state.house.profiles()?.iter().map(view).collect())
+    Ok(status_views(&state.house.statuses()?))
 }
 
 #[tauri::command]
