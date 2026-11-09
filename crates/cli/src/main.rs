@@ -151,8 +151,9 @@ fn launch(env: &Env, id: &str, dry_run: bool) -> Result<String, String> {
     if dry_run {
         return Ok(describe(&spec));
     }
-    let child = spawn(&spec).map_err(|e| format!("cannot start {}: {e}", spec.program.display()))?;
-    Ok(format!("Started {id} (pid {}).\n", child.id()))
+    spawn(&spec).map_err(|e| format!("cannot start {}: {e}", spec.program.display()))?;
+    // If the profile is already running, this process hands over to it and exits.
+    Ok(format!("Opened {id}. If it was already running, its window comes to the front.\n"))
 }
 
 fn installed_app(env: &Env) -> Result<claude_house_core::install::AppVersion, String> {
