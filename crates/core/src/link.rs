@@ -2,13 +2,11 @@
 //!
 //! Claude House cannot see a login button being clicked. Every Claude copy logs
 //! `[Auth] Using system browser for: /login/…` when it sends a login to the browser,
-//! so the copy with the newest such line (within `LOGIN_WINDOW_SECS`) gets the login link.
+//! so the copy with the newest such line gets the login link. No time limit: every login link
+//! comes from some copy's login, and the newest start is the best answer however long sign-in took.
 //! Stateless: a crash or a second run gives the same answer.
 
 use crate::profile::ProfileId;
-
-/// How long after a login starts its link may still be routed to that copy.
-pub const LOGIN_WINDOW_SECS: i64 = 15 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LinkKind {
@@ -95,14 +93,13 @@ pub fn last_login_start(log: &str) -> Option<LogTime> {
         .max()
 }
 
-/// Where a link goes, given each copy's last login start and the current time.
-pub fn route(link: &ClaudeLink, starts: &[(Target, LogTime)], now: LogTime) -> Target {
+/// Where a link goes: a login link to the copy with the newest login start; anything else to the stock copy.
+pub fn route(link: &ClaudeLink, starts: &[(Target, LogTime)]) -> Target {
     if link.kind != LinkKind::Login {
         return Target::Stock;
     }
     starts
         .iter()
-        .filter(|(_, at)| *at <= now && now.0 - at.0 <= LOGIN_WINDOW_SECS)
         .max_by_key(|(_, at)| *at)
         .map_or(Target::Stock, |(target, _)| target.clone())
 }
@@ -159,31 +156,22 @@ mod tests {
     }
 
     #[test]
-    fn login_goes_to_newest_recent_start() {
-        let now = t("2026-11-09 12:00:00");
+    fn login_goes_to_newest_start() {
         let starts = [(Target::Stock, t("2026-11-09 11:50:00")), (p("work"), t("2026-11-09 11:58:00")), (p("home"), t("2026-11-09 11:55:00"))];
-        assert_eq!(route(&login(), &starts, now), p("work"));
+        assert_eq!(route(&login(), &starts), p("work"));
     }
 
     #[test]
-    fn stale_starts_fall_back_to_stock() {
-        let now = t("2026-11-09 12:00:00");
-        let edge = LogTime(now.0 - LOGIN_WINDOW_SECS);
-        assert_eq!(route(&login(), &[(p("work"), edge)], now), p("work"));
-        assert_eq!(route(&login(), &[(p("work"), LogTime(edge.0 - 1))], now), Target::Stock);
-        assert_eq!(route(&login(), &[], now), Target::Stock);
+    fn an_old_start_still_wins_when_it_is_the_only_one() {
+        // Every login link comes from a copy that started a login, so there is no time limit:
+        // a slow sign-in must not fall back to a Main Claude nobody uses.
+        assert_eq!(route(&login(), &[(p("work"), t("2026-11-08 09:00:00"))]), p("work"));
     }
 
     #[test]
-    fn future_starts_are_ignored() {
-        let now = t("2026-11-09 12:00:00");
-        assert_eq!(route(&login(), &[(p("work"), LogTime(now.0 + 1))], now), Target::Stock);
-    }
-
-    #[test]
-    fn other_links_go_to_stock() {
-        let now = t("2026-11-09 12:00:00");
+    fn no_starts_and_other_links_go_to_stock() {
+        assert_eq!(route(&login(), &[]), Target::Stock);
         let other = ClaudeLink::parse("claude://claude.ai/chat/1").unwrap();
-        assert_eq!(route(&other, &[(p("work"), now)], now), Target::Stock);
+        assert_eq!(route(&other, &[(p("work"), t("2026-11-09 12:00:00"))]), Target::Stock);
     }
 }

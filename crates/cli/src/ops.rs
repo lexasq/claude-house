@@ -148,7 +148,7 @@ impl House {
     pub fn link_plan(&self, url: &str) -> Result<(Target, LaunchSpec), String> {
         let link = ClaudeLink::parse(url).map_err(|_| format!("{url:?} is not a claude:// link"))?;
         let list = self.profiles()?;
-        let target = route(&link, &self.login_starts(&list), now());
+        let target = route(&link, &self.login_starts(&list));
         let app = self.installed_app()?;
         let spec = match &target {
             Target::Stock => stock_spec(&self.install_root, app, &link),
@@ -256,12 +256,6 @@ fn store_error(path: &Path, e: StoreError) -> String {
 
 fn parse_id(raw: &str) -> Result<ProfileId, String> {
     ProfileId::parse(raw).map_err(|_| format!("invalid profile id {raw:?}: use 1-32 lowercase letters, digits or dashes"))
-}
-
-/// Now, on the same local clock Claude writes its logs with.
-fn now() -> LogTime {
-    let text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    LogTime::parse(&text).expect("chrono formats a valid log time")
 }
 
 /// The one line of effect for processes: hand the spec to Windows.

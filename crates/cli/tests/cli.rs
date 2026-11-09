@@ -214,12 +214,12 @@ fn login_link_goes_to_stock_when_it_started_last() {
 }
 
 #[test]
-fn stale_or_missing_logs_and_other_links_go_to_stock() {
+fn missing_logs_and_other_links_go_to_stock_old_starts_still_count() {
     let s = Sandbox::new();
     ok(&s.ch(&["add", "work"]));
     assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: stock\n"));
     log_login(&s.profile_log("work"), 20);
-    assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: stock\n"));
+    assert!(ok(&s.ch(&["open-link", LOGIN, "--dry-run"])).starts_with("to: work\n"));
     log_login(&s.profile_log("work"), 1);
     assert!(ok(&s.ch(&["open-link", "claude://claude.ai/chat/1", "--dry-run"])).starts_with("to: stock\n"));
 }
