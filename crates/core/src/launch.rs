@@ -16,7 +16,7 @@ pub struct LaunchSpec {
 }
 
 /// `<profile folder>\claude-code` — the Code tab's config folder for an isolated profile.
-pub fn code_config_dir(house_root: &Path, profile: &Profile) -> PathBuf {
+fn code_config_dir(house_root: &Path, profile: &Profile) -> PathBuf {
     profile_dir(house_root, &profile.id).join("claude-code")
 }
 

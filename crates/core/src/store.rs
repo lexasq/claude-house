@@ -14,7 +14,7 @@ const FORMAT_VERSION: u32 = 1;
 pub struct ProfileList(Vec<Profile>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DuplicateId(pub ProfileId);
+pub struct DuplicateId(ProfileId);
 
 impl ProfileList {
     pub fn add(&mut self, profile: Profile) -> Result<(), DuplicateId> {
@@ -76,7 +76,7 @@ impl TryFrom<ProfileDto> for Profile {
     }
 }
 
-pub fn parse_list(json: &str) -> Result<ProfileList, StoreError> {
+fn parse_list(json: &str) -> Result<ProfileList, StoreError> {
     let file: FileDto = serde_json::from_str(json).map_err(|e| bad(e.to_string()))?;
     if file.version != FORMAT_VERSION {
         return Err(bad(format!("unsupported version {}", file.version)));
@@ -88,7 +88,7 @@ pub fn parse_list(json: &str) -> Result<ProfileList, StoreError> {
     Ok(list)
 }
 
-pub fn render_list(list: &ProfileList) -> String {
+fn render_list(list: &ProfileList) -> String {
     let profiles = list
         .iter()
         .map(|p| ProfileDto {

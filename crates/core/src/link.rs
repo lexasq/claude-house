@@ -9,7 +9,7 @@
 use crate::profile::ProfileId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LinkKind {
+enum LinkKind {
     Login,
     Other,
 }
@@ -37,10 +37,6 @@ impl ClaudeLink {
         let host = rest.split(['/', '?', '#']).next().unwrap_or("");
         let kind = if host.eq_ignore_ascii_case("login") { LinkKind::Login } else { LinkKind::Other };
         Ok(Self { raw: raw.to_owned(), kind })
-    }
-
-    pub fn kind(&self) -> &LinkKind {
-        &self.kind
     }
 
     pub fn as_str(&self) -> &str {
@@ -120,10 +116,10 @@ mod tests {
 
     #[test]
     fn parses_login_and_other_links() {
-        assert_eq!(login().kind(), &LinkKind::Login);
-        assert_eq!(ClaudeLink::parse("CLAUDE://login").unwrap().kind(), &LinkKind::Login);
-        assert_eq!(ClaudeLink::parse("claude://claude.ai/chat/1").unwrap().kind(), &LinkKind::Other);
-        assert_eq!(ClaudeLink::parse("claude://loginx/a").unwrap().kind(), &LinkKind::Other);
+        assert_eq!(login().kind, LinkKind::Login);
+        assert_eq!(ClaudeLink::parse("CLAUDE://login").unwrap().kind, LinkKind::Login);
+        assert_eq!(ClaudeLink::parse("claude://claude.ai/chat/1").unwrap().kind, LinkKind::Other);
+        assert_eq!(ClaudeLink::parse("claude://loginx/a").unwrap().kind, LinkKind::Other);
         assert_eq!(login().as_str(), "claude://login/google-auth?code=x&hop_nonce=y");
     }
 

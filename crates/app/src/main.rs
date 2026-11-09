@@ -21,7 +21,7 @@ struct CopyView {
     /// "never-opened", "signed-out", "signed-in" or "unreadable".
     sign_in: &'static str,
     /// Names of the other copies on the same account ("Main account" for the Main account).
-    same_account_as: Vec<String>,
+    same_account_names: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -48,7 +48,7 @@ fn overview_view(o: &Overview) -> OverviewView {
             SignIn::SignedIn(_) => "signed-in",
             SignIn::Unreadable => "unreadable",
         },
-        same_account_as: o.names(&c.same_account_as),
+        same_account_names: o.names(&c.same_account_as),
     };
     OverviewView {
         main: copy(&o.main),

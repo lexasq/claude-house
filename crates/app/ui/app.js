@@ -22,25 +22,25 @@ async function call(cmd, args) {
 
 // ---- Login routing ----
 
-const OWNER_TEXT = {
-  "claude-house": ["Google logins go to the profile that started them.", "status-ok"],
-  "claude-desktop": ["Off. Google logins go to your normal Claude window.", ""],
-  other: ["Another app handles claude:// links.", "status-warn"],
-};
+// What the routing card says, from the routing state: [text, CSS class].
+function routingText(v) {
+  if (v.error) return [`Stopped: ${v.error}`, "status-warn"];
+  // On, but Claude re-registered claude:// a moment ago; the handler guard is taking it back.
+  if (v.enabled && v.owner !== "claude-house") return ["Taking claude:// links back from Claude…", "status-warn"];
+  if (v.owner === "claude-house") return ["Google logins go to the account that started them.", "status-ok"];
+  if (v.owner === "claude-desktop") return ["Off. Google logins go to your Main account's window.", "muted"];
+  return ["Another app handles claude:// links.", "status-warn"];
+}
 
 async function showRouting(view) {
   const v = view ?? (await call("routing_status"));
   const toggle = $("routing-toggle");
   toggle.checked = v.enabled;
   toggle.disabled = false;
-  const [text, cls] = v.error
-    ? [`Stopped: ${v.error}`, "status-warn"]
-    : v.enabled && v.owner !== "claude-house"
-      ? ["Taking claude:// links back from Claude…", "status-warn"]
-      : OWNER_TEXT[v.owner];
+  const [text, cls] = routingText(v);
   const p = $("routing-text");
   p.textContent = text;
-  p.className = cls || "muted";
+  p.className = cls;
 }
 
 $("routing-toggle").addEventListener("change", async (e) => {
@@ -62,7 +62,7 @@ const SIGN_IN = {
   unreadable: ["Status unknown", "todo"],
 };
 
-/// One row: a Claude copy with its sign-in badge, a note, a warning and buttons.
+// One row: a Claude copy with its sign-in badge, a note, a warning and buttons.
 function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   const li = document.createElement("li");
   li.className = "card profile";
@@ -84,10 +84,10 @@ function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   sub.className = "meta";
   sub.textContent = meta;
   info.append(title, sub);
-  if (copy.same_account_as.length) {
+  if (copy.same_account_names.length) {
     const warn = document.createElement("div");
     warn.className = "warn";
-    warn.textContent = `Same account as ${copy.same_account_as.join(", ")}. ${warning}`;
+    warn.textContent = `Same account as ${copy.same_account_names.join(", ")}. ${warning}`;
     info.append(warn);
   }
 
@@ -106,14 +106,14 @@ function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   return li;
 }
 
-/// The Claude Desktop you already use is the main account, as it is: no re-login, sessions stay put.
+// The Claude Desktop you already use is the main account, as it is: no re-login, sessions stay put.
 function mainItem(main) {
   const li = copyItem({
     name: "Main account",
     color: "var(--muted)",
     meta: "Your usual Claude Desktop · sign-in and Code sessions stay where they are",
     copy: main,
-    warning: "Sign that profile in with a different account.",
+    warning: "Sign that one in with a different account.",
     open: () => call("launch_main"),
   });
   li.classList.add("main-copy");
