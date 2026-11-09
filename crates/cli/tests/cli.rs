@@ -31,8 +31,10 @@ impl Sandbox {
             .unwrap()
     }
 
+    /// Under LOCALAPPDATA: Claude moves logs of a data folder under APPDATA to
+    /// %LOCALAPPDATA%\<folder name>\logs, but keeps them inside one under LOCALAPPDATA.
     fn house(&self) -> PathBuf {
-        self.appdata.join("ClaudeHouse")
+        self.localappdata.join("ClaudeHouse")
     }
 }
 
@@ -76,9 +78,7 @@ fn list_shows_sign_in_and_shared_accounts() {
         ok(&s.ch(&["add", id]));
     }
     ok(&s.ch(&["add", "twin", "--name", "Twin"]));
-    write_config(s.house().join("profiles").join("twin").join("config.json"), &format!(
-        r#"{{"windowSizeWasSignedIn":true,"lastKnownAccountUuid":"acct-b"}}"#
-    ));
+    write_config(s.house().join("profiles").join("twin").join("config.json"), r#"{"windowSizeWasSignedIn":true,"lastKnownAccountUuid":"acct-b"}"#);
     // A folder where the file should be: exists, but cannot be read.
     std::fs::create_dir_all(s.house().join("profiles").join("locked").join("config.json")).unwrap();
     let profile_config = |id: &str| s.house().join("profiles").join(id).join("config.json");

@@ -19,6 +19,12 @@ Claude Desktop under test: `%LOCALAPPDATA%\AnthropicClaude\app-4.23118.0` (Squir
 - So phase 3 is needed, and its design holds: Claude House owns `claude://` and relaunches `claude.exe --user-data-dir=<profile that started the login> "%1"`.
 - Changing `HKCU\Software\Classes\claude` is a persistent change that needs the user's approval (auto mode blocked it). The installer, or an explicit user action, must make it, and uninstall must restore it.
 
+## Log folder depends on where the data folder is (found 2026-11-09)
+
+- On Windows, if the data folder is under `%APPDATA%`, Claude calls `setAppLogsPath(join(LOCALAPPDATA, basename(userData), "logs"))`. The stock copy (`%APPDATA%\Claude`) logs to `%LOCALAPPDATA%\Claude\Logs`; a profile at `%APPDATA%\ClaudeHouse\profiles\second` logged to `%LOCALAPPDATA%\second\logs`.
+- If the data folder is under `%LOCALAPPDATA%`, logs stay in `<data folder>\logs` (the phase 0 test profile).
+- Consequence: Claude House keeps its data in `%LOCALAPPDATA%\ClaudeHouse`. With the first layout, login routing never saw a profile's login start and sent every login to the stock copy, and a profile id like `temp` would have logged into `%LOCALAPPDATA%\Temp`.
+
 ## Open
 
 1. ~~Does login finish inside the isolated copy?~~ Yes, with routing (above).

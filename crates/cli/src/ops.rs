@@ -59,7 +59,9 @@ impl House {
         let var = |k: &str| std::env::var_os(k).map(PathBuf::from).ok_or(format!("{k} is not set"));
         let (local, roaming) = (var("LOCALAPPDATA")?, var("APPDATA")?);
         Ok(House {
-            root: roaming.join("ClaudeHouse"),
+            // Not under APPDATA: Claude would move a profile's logs to %LOCALAPPDATA%\<id>\logs,
+            // outside the profile folder (app.asar: setAppLogsPath(join(LOCALAPPDATA, basename(userData), "logs"))).
+            root: local.join("ClaudeHouse"),
             install_root: local.join("AnthropicClaude"),
             stock_log: local.join("Claude").join("Logs").join("main.log"),
             stock_config: roaming.join("Claude").join("config.json"),

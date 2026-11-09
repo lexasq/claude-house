@@ -5,7 +5,7 @@
 | **Claude House** | This app. Starts and manages several Claude Desktop copies, one per account. |
 | **Profile** | One Claude account set up in Claude House. Has an id, a display name, a colour and an "isolate Code tab" flag. |
 | **Profile id** | Short lowercase slug (`a-z`, `0-9`, `-`, 1–32 chars). Never changes. The profile folder is derived from it. |
-| **House root** | `%APPDATA%\ClaudeHouse`. Holds `profiles.json` and `profiles\<id>\`. |
+| **House root** | `%LOCALAPPDATA%\ClaudeHouse`. Holds `profiles.json`, `profiles\<id>\`, `routing-enabled`, `ch-link.log`. Must not be under `%APPDATA%`: Claude moves the logs of a data folder there to `%LOCALAPPDATA%\<folder name>\logs`. |
 | **Profile folder** | `<house root>\profiles\<id>`. Passed to Claude as `--user-data-dir`. Two profiles can never share one, because it comes from the unique id. |
 | **Code config folder** | `<profile folder>\claude-code`. Passed as `CLAUDE_CONFIG_DIR` when the profile isolates its Code tab settings from `~/.claude`. |
 | **Claude install** | `%LOCALAPPDATA%\AnthropicClaude`. Holds side-by-side `app-<version>` folders. |

@@ -20,7 +20,7 @@ ch launch work --dry-run  # prints the command instead
 ch remove work            # forgets the profile; its data folder is kept
 ```
 
-Profiles live in `%APPDATA%\ClaudeHouse\profiles.json`; each profile's data in `%APPDATA%\ClaudeHouse\profiles\<id>`.
+Profiles live in `%LOCALAPPDATA%\ClaudeHouse\profiles.json`; each profile's data in `%LOCALAPPDATA%\ClaudeHouse\profiles\<id>`. (Not under `%APPDATA%`: there Claude would put a profile's logs in `%LOCALAPPDATA%\<id>\logs`, where login routing can't find them.)
 
 ## Logging in with Google
 
