@@ -13,6 +13,7 @@ claude-house-core = { path = "../core" }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 winreg = "0.55"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_Threading", "Win32_Security"] }
 
 [dev-dependencies]

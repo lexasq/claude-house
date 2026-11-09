@@ -257,6 +257,70 @@ fn ch_link_logs_outcome_without_the_login_code() {
     assert!(!log.contains("SECRET123"), "login code leaked into the log: {log}");
 }
 
+impl Sandbox {
+    /// A fake Main Claude data folder, signed in.
+    fn main_data(&self) -> PathBuf {
+        let main = self.appdata.join("Claude");
+        write_config(main.join("config.json"), r#"{"windowSizeWasSignedIn":true,"lastKnownAccountUuid":"acct-a"}"#);
+        write_config(main.join("claude-code-sessions").join("x").join("s1.json"), "{}");
+        main
+    }
+}
+
+#[test]
+fn import_main_copies_main_claude_into_a_new_profile() {
+    let s = Sandbox::new();
+    let main = s.main_data();
+    assert_eq!(ok(&s.ch(&["import-main", "work", "--name", "Work"])), "Imported Main Claude as work.\n");
+    let copied = s.house().join("profiles").join("work");
+    assert!(copied.join("claude-code-sessions").join("x").join("s1.json").is_file());
+    assert!(main.join("config.json").is_file(), "the original stays");
+    assert!(!s.house().join("profiles").join("work.importing").exists());
+    assert!(ok(&s.ch(&["list"])).contains("work  Work  #d97757  code shared  signed in (same account as main Claude)\n"));
+}
+
+#[test]
+fn import_main_refuses_existing_ids_and_folders() {
+    let s = Sandbox::new();
+    s.main_data();
+    ok(&s.ch(&["add", "work"]));
+    assert!(err(&s.ch(&["import-main", "work"])).contains("already exists"));
+    // A folder kept after `ch remove` is somebody's data: never overwrite it.
+    std::fs::create_dir_all(s.house().join("profiles").join("old")).unwrap();
+    assert!(err(&s.ch(&["import-main", "old"])).contains("already has a folder"));
+}
+
+#[test]
+fn import_main_recovers_from_a_crash_either_side_of_the_rename() {
+    let s = Sandbox::new();
+    s.main_data();
+    let profiles = s.house().join("profiles");
+    // Crash during the copy: a half-written staging folder.
+    write_config(profiles.join("work.importing").join("half"), "x");
+    ok(&s.ch(&["import-main", "work"]));
+    assert!(!profiles.join("work").join("half").exists());
+    // Crash after the rename, before the list was saved.
+    std::fs::write(s.house().join("profiles.json"), r#"{"version":1,"profiles":[]}"#).unwrap();
+    ok(&s.ch(&["import-main", "work"]));
+    assert!(ok(&s.ch(&["list"])).contains("\nwork  work"));
+}
+
+#[test]
+fn import_main_needs_main_claude_closed_and_present() {
+    let s = Sandbox::new();
+    assert!(err(&s.ch(&["import-main", "work"])).contains("no data"));
+    s.main_data();
+    // A real process standing in for Main Claude: Windows' ping, renamed claude.exe, in the fake install folder.
+    let fake = s.localappdata.join("AnthropicClaude").join("app-4.23118.0").join("claude.exe");
+    std::fs::copy(r"C:\Windows\System32\PING.EXE", &fake).unwrap();
+    let mut main = Command::new(&fake).args(["-n", "30", "127.0.0.1"]).stdout(std::process::Stdio::null()).spawn().unwrap();
+    let out = s.ch(&["import-main", "work"]);
+    main.kill().unwrap();
+    let _ = main.wait();
+    assert!(err(&out).contains("Quit Main Claude"));
+    assert!(!s.house().join("profiles").join("work").exists());
+}
+
 #[test]
 fn corrupt_profile_list_is_reported_not_overwritten() {
     let s = Sandbox::new();

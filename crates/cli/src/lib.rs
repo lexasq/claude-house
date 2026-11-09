@@ -37,6 +37,17 @@ enum Cmd {
         #[arg(long)]
         isolate_code: bool,
     },
+    /// Copy Main Claude (sign-in, sessions, settings) into a new profile. Main Claude must be closed.
+    ImportMain {
+        /// 1-32 lowercase letters, digits or dashes. Never changes.
+        id: String,
+        /// Display name (defaults to the id).
+        #[arg(long)]
+        name: Option<String>,
+        /// Badge colour, #rrggbb.
+        #[arg(long, default_value = "#d97757")]
+        color: String,
+    },
     /// Remove a profile from the list. Its data folder is kept.
     Remove { id: String },
     /// Start a profile's Claude copy (or bring it to the front if it is running).
@@ -93,6 +104,9 @@ fn run(cmd: Cmd, house: &House) -> Result<String, String> {
         Cmd::Add { id, name, color, isolate_code } => {
             house.add(&id, name.as_deref(), &color, isolate_code).map(|_| format!("Added {id}.\n"))
         }
+        Cmd::ImportMain { id, name, color } => house
+            .import_main(&id, name.as_deref(), &color)
+            .map(|p| format!("Imported Main Claude as {}.\n", p.id.as_str())),
         Cmd::Remove { id } => house
             .remove(&id)
             .map(|dir| format!("Removed {id}. Its data is kept in {}\n", dir.display())),
