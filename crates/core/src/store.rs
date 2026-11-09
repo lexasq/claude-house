@@ -193,6 +193,12 @@ mod tests {
     }
 
     #[test]
+    fn unreadable_file_is_an_io_error_not_an_empty_list() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(matches!(load(dir.path()), Err(StoreError::Io(_))));
+    }
+
+    #[test]
     fn save_then_load_round_trips_and_leaves_no_temp_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("profiles.json");
