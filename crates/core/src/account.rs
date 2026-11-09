@@ -23,6 +23,8 @@ pub enum SignIn {
 #[derive(Deserialize)]
 struct ConfigFields {
     #[serde(rename = "windowSizeWasSignedIn")]
+    /// Both fields are required: signed-in copies have both, a copy that never finished signing in has
+    /// neither, and requiring the flag too avoids trusting an account id left behind after a sign-out.
     signed_in: Option<bool>,
     #[serde(rename = "lastKnownAccountUuid")]
     account: Option<String>,

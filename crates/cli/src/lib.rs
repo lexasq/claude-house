@@ -172,7 +172,9 @@ fn command_line(spec: &LaunchSpec) -> String {
 }
 
 /// Entry point of the windowless `ch-link.exe` that Windows runs for claude:// links.
-/// It has no console, so the outcome goes to `<house root>\ch-link.log` (without the link, which holds a login code).
+/// It has no console, so the outcome goes to `<house root>\ch-link.log`: one line per link naming where it
+/// went, never the link itself (it holds a one-time login code). If APPDATA/LOCALAPPDATA are missing
+/// (never in a normal Windows session) there is nowhere to log, and it just exits.
 pub fn ch_link_main() -> ExitCode {
     let url = std::env::args().nth(1).unwrap_or_default();
     let Ok(house) = House::from_process() else { return ExitCode::FAILURE };

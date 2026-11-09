@@ -2,7 +2,7 @@
 name = "claude-house-core"
 version = "0.1.0"
 edition = "2021"
-description = "Pure rules for Claude House: profiles, launch commands, claude:// routing, profile list storage."
+description = "Rules for Claude House as pure functions (profiles, launch commands, claude:// routing, sign-in state), plus profiles.json storage."
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -1,3 +1,6 @@
+//! The Claude Desktop install: `%LOCALAPPDATA%\AnthropicClaude` holds side-by-side `app-<version>`
+//! folders (Squirrel keeps old versions next to the new one), and Claude House launches the newest.
+
 /// Version of one `app-<major>.<minor>.<patch>` folder. Field order makes the derived `Ord` numeric.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AppVersion(pub u32, pub u32, pub u32);

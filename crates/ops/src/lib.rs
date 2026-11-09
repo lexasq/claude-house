@@ -235,7 +235,8 @@ impl House {
     }
 }
 
-/// `ch-link.exe`, installed next to the running program.
+/// `ch-link.exe`, which must sit next to the running program: the handler stores its absolute path,
+/// so after moving the programs, routing works again once the handler guard re-takes the handler.
 pub fn link_exe() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("ch-link.exe");
     exe.is_file().then_some(exe.clone()).ok_or(format!("{} is missing; build it with cargo build -p claude-house-cli", exe.display()))

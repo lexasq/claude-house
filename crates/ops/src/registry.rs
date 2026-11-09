@@ -42,7 +42,9 @@ pub fn wait_for_change(timeout: Duration) {
             return;
         }
         let filter = REG_NOTIFY_CHANGE_LAST_SET | REG_NOTIFY_CHANGE_NAME;
-        if RegNotifyChangeKeyValue(key.raw_handle() as HKEY, 1, filter, event, 1) == 0 {
+        // Watch the whole subtree: Claude rewrites `claudeshellopenmmand`, below the key we open.
+        let (watch_subtree, asynchronous) = (1, 1);
+        if RegNotifyChangeKeyValue(key.raw_handle() as HKEY, watch_subtree, filter, event, asynchronous) == 0 {
             WaitForSingleObject(event, timeout.as_millis() as u32);
         } else {
             std::thread::sleep(timeout);
