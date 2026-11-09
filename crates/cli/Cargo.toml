@@ -2,7 +2,7 @@
 name = "claude-house-cli"
 version = "0.1.0"
 edition = "2021"
-description = "`ch`: manage Claude House profiles from the command line."
+description = "`ch` (command line) and `ch-link` (the claude:// handler) over claude-house-ops."
 
 [[bin]]
 name = "ch"
@@ -10,10 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 claude-house-core = { path = "../core" }
+claude-house-ops = { path = "../ops" }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-winreg = "0.55"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_Threading", "Win32_Security"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -560,8 +560,8 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 name = "claude-house-app"
 version = "0.1.0"
 dependencies = [
- "claude-house-cli",
  "claude-house-core",
+ "claude-house-ops",
  "serde",
  "tauri",
  "tauri-build",
@@ -575,9 +575,8 @@ dependencies = [
  "chrono",
  "clap",
  "claude-house-core",
+ "claude-house-ops",
  "tempfile",
- "windows-sys 0.59.0",
- "winreg 0.55.0",
 ]
 
 [[package]]
@@ -587,6 +586,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "claude-house-ops"
+version = "0.1.0"
+dependencies = [
+ "claude-house-core",
+ "tempfile",
+ "windows-sys 0.59.0",
+ "winreg 0.55.0",
 ]
 
 [[package]]

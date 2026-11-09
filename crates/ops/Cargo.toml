@@ -1,0 +1,13 @@
+[package]
+name = "claude-house-ops"
+version = "0.1.0"
+edition = "2021"
+description = "Claude House operations with effects (files, processes, registry), shared by the ch CLI, ch-link and the app."
+
+[dependencies]
+claude-house-core = { path = "../core" }
+winreg = "0.55"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_Threading", "Win32_Security"] }
+
+[dev-dependencies]
+tempfile = "3"

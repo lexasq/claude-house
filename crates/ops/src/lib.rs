@@ -13,7 +13,7 @@ use claude_house_core::link::{last_login_start, route, ClaudeLink, LogTime, Targ
 use claude_house_core::profile::{profile_dir, Color, Profile, ProfileId, ProfileName};
 use claude_house_core::store::{self, ProfileList, StoreError};
 
-use crate::registry;
+mod registry;
 
 /// Machine locations, read once from the environment.
 pub struct House {

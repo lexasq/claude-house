@@ -1,7 +1,6 @@
 //! `ch` and `ch-link` — terminal front ends over `ops`.
 
-pub mod ops;
-mod registry;
+use claude_house_ops as ops;
 
 use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;

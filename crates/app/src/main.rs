@@ -1,4 +1,4 @@
-//! Claude House window and tray. A thin shell over `claude_house_cli::ops`.
+//! Claude House window and tray. A thin shell over `claude_house_ops`.
 // Release builds have no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use claude_house_cli::ops::{self, CopyStatus, HandlerOwner, House, Overview};
+use claude_house_ops::{self as ops, CopyStatus, HandlerOwner, House, Overview};
 use claude_house_core::account::SignIn;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
