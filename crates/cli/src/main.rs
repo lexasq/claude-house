@@ -5,7 +5,8 @@ use std::process::{Command, ExitCode, Stdio};
 
 use clap::{Parser, Subcommand};
 use claude_house_core::install::newest_app;
-use claude_house_core::launch::{profile_spec, LaunchSpec};
+use claude_house_core::launch::{profile_spec, stock_spec, LaunchSpec};
+use claude_house_core::link::{last_login_start, route, ClaudeLink, LogTime, Target};
 use claude_house_core::profile::{profile_dir, Color, Profile, ProfileId, ProfileName};
 use claude_house_core::store::{self, ProfileList, StoreError};
 
@@ -43,20 +44,31 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Send a claude:// link to the Claude copy that started the login.
+    OpenLink {
+        url: String,
+        /// Print where it would go and the command, instead of running it.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Machine locations, read once from the environment.
 struct Env {
     house_root: PathBuf,
     install_root: PathBuf,
+    /// The stock copy's log, where it records login starts.
+    stock_log: PathBuf,
 }
 
 impl Env {
     fn from_process() -> Result<Self, String> {
         let var = |k: &str| std::env::var_os(k).map(PathBuf::from).ok_or(format!("{k} is not set"));
+        let local = var("LOCALAPPDATA")?;
         Ok(Env {
             house_root: var("APPDATA")?.join("ClaudeHouse"),
-            install_root: var("LOCALAPPDATA")?.join("AnthropicClaude"),
+            install_root: local.join("AnthropicClaude"),
+            stock_log: local.join("Claude").join("Logs").join("main.log"),
         })
     }
 
@@ -85,6 +97,7 @@ fn run(cmd: Cmd, env: &Env) -> Result<String, String> {
         Cmd::Add { id, name, color, isolate_code } => add(env, &id, name.as_deref(), &color, isolate_code),
         Cmd::Remove { id } => remove(env, &id),
         Cmd::Launch { id, dry_run } => launch(env, &id, dry_run),
+        Cmd::OpenLink { url, dry_run } => open_link(env, &url, dry_run),
     }
 }
 
@@ -154,6 +167,43 @@ fn launch(env: &Env, id: &str, dry_run: bool) -> Result<String, String> {
     spawn(&spec).map_err(|e| format!("cannot start {}: {e}", spec.program.display()))?;
     // If the profile is already running, this process hands over to it and exits.
     Ok(format!("Opened {id}. If it was already running, its window comes to the front.\n"))
+}
+
+fn open_link(env: &Env, url: &str, dry_run: bool) -> Result<String, String> {
+    let link = ClaudeLink::parse(url).map_err(|_| format!("{url:?} is not a claude:// link"))?;
+    let list = load(env)?;
+    let target = route(&link, &login_starts(env, &list), now());
+    let app = installed_app(env)?;
+    let (to, spec) = match &target {
+        Target::Stock => ("stock".to_owned(), stock_spec(&env.install_root, app, &link)),
+        Target::Profile(id) => {
+            let profile = list.get(id).expect("route only returns listed profiles");
+            (id.as_str().to_owned(), profile_spec(&env.install_root, app, &env.house_root, profile, Some(&link)))
+        }
+    };
+    if dry_run {
+        return Ok(format!("to: {to}\n{}", describe(&spec)));
+    }
+    spawn(&spec).map_err(|e| format!("cannot start {}: {e}", spec.program.display()))?;
+    Ok(format!("Sent the link to {to}.\n"))
+}
+
+/// Last login start of the stock copy and of every profile, from their logs. Unreadable logs count as none.
+fn login_starts(env: &Env, list: &ProfileList) -> Vec<(Target, LogTime)> {
+    let last = |log: &Path| std::fs::read_to_string(log).ok().as_deref().and_then(last_login_start);
+    let profiles = list
+        .iter()
+        .map(|p| (Target::Profile(p.id.clone()), profile_dir(&env.house_root, &p.id).join("logs").join("main.log")));
+    std::iter::once((Target::Stock, env.stock_log.clone()))
+        .chain(profiles)
+        .filter_map(|(target, log)| last(&log).map(|at| (target, at)))
+        .collect()
+}
+
+/// Now, on the same local clock Claude writes its logs with.
+fn now() -> LogTime {
+    let text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    LogTime::parse(&text).expect("chrono formats a valid log time")
 }
 
 fn installed_app(env: &Env) -> Result<claude_house_core::install::AppVersion, String> {
