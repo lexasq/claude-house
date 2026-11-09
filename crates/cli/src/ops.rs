@@ -1,0 +1,211 @@
+//! Claude House operations with effects (files, processes, registry), shared by `ch`, `ch-link` and the app.
+//! They return data; callers decide how to show it. Rules live in `claude-house-core`.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use claude_house_core::handler::{handler_command, is_handled_by};
+use claude_house_core::install::{newest_app, AppVersion};
+use claude_house_core::launch::{claude_exe, profile_spec, stock_spec, LaunchSpec};
+use claude_house_core::link::{last_login_start, route, ClaudeLink, LogTime, Target};
+use claude_house_core::profile::{profile_dir, Color, Profile, ProfileId, ProfileName};
+use claude_house_core::store::{self, ProfileList, StoreError};
+
+use crate::registry;
+
+/// Machine locations, read once from the environment.
+pub struct House {
+    pub root: PathBuf,
+    install_root: PathBuf,
+    /// The stock copy's log, where it records login starts.
+    stock_log: PathBuf,
+}
+
+/// Who `claude://` links currently go to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandlerOwner {
+    ClaudeHouse,
+    ClaudeDesktop,
+    Other(Option<String>),
+}
+
+impl House {
+    pub fn from_process() -> Result<Self, String> {
+        let var = |k: &str| std::env::var_os(k).map(PathBuf::from).ok_or(format!("{k} is not set"));
+        let local = var("LOCALAPPDATA")?;
+        Ok(House {
+            root: var("APPDATA")?.join("ClaudeHouse"),
+            install_root: local.join("AnthropicClaude"),
+            stock_log: local.join("Claude").join("Logs").join("main.log"),
+        })
+    }
+
+    fn list_path(&self) -> PathBuf {
+        self.root.join("profiles.json")
+    }
+
+    pub fn profiles(&self) -> Result<ProfileList, String> {
+        store::load(&self.list_path()).map_err(|e| store_error(&self.list_path(), e))
+    }
+
+    fn save(&self, list: &ProfileList) -> Result<(), String> {
+        std::fs::create_dir_all(&self.root).map_err(|e| format!("cannot create {}: {e}", self.root.display()))?;
+        store::save(&self.list_path(), list).map_err(|e| store_error(&self.list_path(), e))
+    }
+
+    pub fn add(&self, id: &str, name: Option<&str>, color: &str, isolate_code: bool) -> Result<Profile, String> {
+        let profile = Profile {
+            id: parse_id(id)?,
+            name: ProfileName::parse(name.unwrap_or(id)).ok_or("invalid name: use 1-64 characters")?,
+            color: Color::parse(color).ok_or(format!("invalid color {color:?}: use #rrggbb"))?,
+            isolate_code,
+        };
+        let mut list = self.profiles()?;
+        list.add(profile.clone()).map_err(|_| format!("profile {id:?} already exists"))?;
+        self.save(&list)?;
+        Ok(profile)
+    }
+
+    /// Forgets the profile. Returns its data folder, which is kept.
+    pub fn remove(&self, id: &str) -> Result<PathBuf, String> {
+        let id = parse_id(id)?;
+        let mut list = self.profiles()?;
+        list.remove(&id);
+        self.save(&list)?;
+        Ok(profile_dir(&self.root, &id))
+    }
+
+    pub fn launch_spec(&self, id: &str) -> Result<LaunchSpec, String> {
+        let list = self.profiles()?;
+        let profile = list.get(&parse_id(id)?).ok_or(format!("no profile {id:?}"))?;
+        Ok(profile_spec(&self.install_root, self.installed_app()?, &self.root, profile, None))
+    }
+
+    /// Starts the profile's copy; if it is running, the new process hands over to it and exits.
+    pub fn launch(&self, id: &str) -> Result<(), String> {
+        spawn(&self.launch_spec(id)?)
+    }
+
+    /// Where `url` goes and the command that delivers it.
+    pub fn link_plan(&self, url: &str) -> Result<(Target, LaunchSpec), String> {
+        let link = ClaudeLink::parse(url).map_err(|_| format!("{url:?} is not a claude:// link"))?;
+        let list = self.profiles()?;
+        let target = route(&link, &self.login_starts(&list), now());
+        let app = self.installed_app()?;
+        let spec = match &target {
+            Target::Stock => stock_spec(&self.install_root, app, &link),
+            Target::Profile(id) => {
+                let profile = list.get(id).expect("route only returns listed profiles");
+                profile_spec(&self.install_root, app, &self.root, profile, Some(&link))
+            }
+        };
+        Ok((target, spec))
+    }
+
+    pub fn open_link(&self, url: &str) -> Result<Target, String> {
+        let (target, spec) = self.link_plan(url)?;
+        spawn(&spec)?;
+        Ok(target)
+    }
+
+    /// Last login start of the stock copy and of every profile, from their logs. Unreadable logs count as none.
+    fn login_starts(&self, list: &ProfileList) -> Vec<(Target, LogTime)> {
+        let last = |log: &Path| std::fs::read_to_string(log).ok().as_deref().and_then(last_login_start);
+        let profiles = list
+            .iter()
+            .map(|p| (Target::Profile(p.id.clone()), profile_dir(&self.root, &p.id).join("logs").join("main.log")));
+        std::iter::once((Target::Stock, self.stock_log.clone()))
+            .chain(profiles)
+            .filter_map(|(target, log)| last(&log).map(|at| (target, at)))
+            .collect()
+    }
+
+    fn installed_app(&self) -> Result<AppVersion, String> {
+        let names: Vec<String> = std::fs::read_dir(&self.install_root)
+            .map(|rd| rd.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect())
+            .unwrap_or_default();
+        newest_app(names.iter().map(String::as_str))
+            .ok_or(format!("Claude Desktop is not installed in {}", self.install_root.display()))
+    }
+
+    fn stock_exe(&self) -> Result<PathBuf, String> {
+        Ok(claude_exe(&self.install_root, self.installed_app()?))
+    }
+
+    pub fn handler_owner(&self) -> HandlerOwner {
+        let current = registry::read_handler();
+        if link_exe().is_ok_and(|exe| is_handled_by(current.as_deref(), &exe)) {
+            HandlerOwner::ClaudeHouse
+        } else if self.stock_exe().is_ok_and(|exe| is_handled_by(current.as_deref(), &exe)) {
+            HandlerOwner::ClaudeDesktop
+        } else {
+            HandlerOwner::Other(current)
+        }
+    }
+
+    /// Points `claude://` back at Claude Desktop.
+    pub fn restore_handler(&self) -> Result<(), String> {
+        write_handler(&handler_command(&self.stock_exe()?))
+    }
+}
+
+/// `ch-link.exe`, installed next to the running program.
+pub fn link_exe() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("ch-link.exe");
+    exe.is_file().then_some(exe.clone()).ok_or(format!("{} is missing; build it with cargo build -p claude-house-cli", exe.display()))
+}
+
+/// Points `claude://` at Claude House once.
+pub fn take_handler() -> Result<(), String> {
+    write_handler(&handler_command(&link_exe()?))
+}
+
+/// Keeps `claude://` pointed at Claude House until `stop` is set (checked at least every 5 s).
+/// Calls `on_take` with the command it replaced each time it takes the handler back.
+pub fn keep_handler(stop: &AtomicBool, mut on_take: impl FnMut(Option<String>)) -> Result<(), String> {
+    let ours = handler_command(&link_exe()?);
+    while !stop.load(Ordering::Relaxed) {
+        let current = registry::read_handler();
+        if current.as_deref() != Some(ours.as_str()) {
+            write_handler(&ours)?;
+            on_take(current);
+        }
+        registry::wait_for_change(std::time::Duration::from_secs(5));
+    }
+    Ok(())
+}
+
+fn write_handler(command: &str) -> Result<(), String> {
+    registry::write_handler(command).map_err(|e| format!("cannot write the claude:// handler: {e}"))
+}
+
+fn store_error(path: &Path, e: StoreError) -> String {
+    match e {
+        StoreError::Io(e) => format!("cannot use {}: {e}", path.display()),
+        StoreError::Format(m) => format!("{} is invalid: {m}", path.display()),
+    }
+}
+
+fn parse_id(raw: &str) -> Result<ProfileId, String> {
+    ProfileId::parse(raw).map_err(|_| format!("invalid profile id {raw:?}: use 1-32 lowercase letters, digits or dashes"))
+}
+
+/// Now, on the same local clock Claude writes its logs with.
+fn now() -> LogTime {
+    let text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    LogTime::parse(&text).expect("chrono formats a valid log time")
+}
+
+/// The one line of effect for processes: hand the spec to Windows.
+fn spawn(spec: &LaunchSpec) -> Result<(), String> {
+    Command::new(&spec.program)
+        .args(&spec.args)
+        .envs(spec.env.iter().map(|(k, v)| (k, v)))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("cannot start {}: {e}", spec.program.display()))
+}
