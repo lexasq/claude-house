@@ -159,7 +159,7 @@ fn render(o: &Overview) -> String {
         })
         .collect();
     let profiles = if profiles.is_empty() { "No profiles. Add one with: ch add <id>\n".to_owned() } else { profiles };
-    format!("Main Claude  {}\n{profiles}", status(&o.main))
+    format!("{}  {}\n{profiles}", ops::MAIN_NAME, status(&o.main))
 }
 
 fn describe(spec: &LaunchSpec) -> String {

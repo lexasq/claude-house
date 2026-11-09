@@ -25,6 +25,9 @@ pub struct House {
     stock_config: PathBuf,
 }
 
+/// What the stock Claude Desktop is called: the account the user already uses, kept as it is.
+pub const MAIN_NAME: &str = "Main account";
+
 /// One Claude copy's sign-in state and the other copies on the same account.
 pub struct CopyStatus {
     pub sign_in: SignIn,
@@ -38,12 +41,12 @@ pub struct Overview {
 }
 
 impl Overview {
-    /// Display names of `targets` ("main Claude" for the stock copy).
+    /// Display names of `targets` (`MAIN_NAME` for the stock copy).
     pub fn names(&self, targets: &[Target]) -> Vec<String> {
         targets
             .iter()
             .map(|t| match t {
-                Target::Stock => "main Claude".to_owned(),
+                Target::Stock => MAIN_NAME.to_owned(),
                 Target::Profile(id) => {
                     self.profiles.iter().find(|(p, _)| &p.id == id).map_or(id.as_str(), |(p, _)| p.name.as_str()).to_owned()
                 }

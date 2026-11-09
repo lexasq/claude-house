@@ -20,7 +20,7 @@ const TRAY_ID: &str = "main";
 struct CopyView {
     /// "never-opened", "signed-out", "signed-in" or "unreadable".
     sign_in: &'static str,
-    /// Names of the other copies on the same account ("main Claude" for the stock copy).
+    /// Names of the other copies on the same account ("Main account" for the stock copy).
     same_account_as: Vec<String>,
 }
 

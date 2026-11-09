@@ -106,13 +106,14 @@ function copyItem({ name, color, meta, copy, warning, open, extra = [] }) {
   return li;
 }
 
+/// The Claude Desktop you already use is the main account, as it is: no re-login, sessions stay put.
 function mainItem(main) {
   const li = copyItem({
-    name: "Main Claude",
+    name: "Main account",
     color: "var(--muted)",
-    meta: "Your usual Claude Desktop. Its Code sessions stay here.",
+    meta: "Your usual Claude Desktop · sign-in and Code sessions stay where they are",
     copy: main,
-    warning: "Keep your main account here and use profiles for other accounts.",
+    warning: "Sign that profile in with a different account.",
     open: () => call("launch_main"),
   });
   li.classList.add("main-copy");
@@ -161,8 +162,10 @@ async function showProfiles() {
   if (key === shown) return;
   const countChanged = !shown || JSON.parse(shown).profiles.length !== o.profiles.length;
   shown = key;
-  $("profiles").replaceChildren(mainItem(o.main), ...o.profiles.map(profileItem));
-  $("empty").hidden = o.profiles.length > 0;
+  // The main account shows as soon as Claude Desktop has been used on this machine.
+  const main = o.main.sign_in === "never-opened" ? [] : [mainItem(o.main)];
+  $("profiles").replaceChildren(...main, ...o.profiles.map(profileItem));
+  $("empty").hidden = main.length + o.profiles.length > 0;
   if (countChanged) $("add-color").value = PALETTE[o.profiles.length % PALETTE.length];
 }
 
